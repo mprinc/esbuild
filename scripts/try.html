@@ -61,6 +61,10 @@
       box-sizing: border-box;
     }
 
+    section p {
+      line-height: 26px;
+    }
+
     #input {
       left: 0;
       width: 50%;
@@ -74,7 +78,7 @@
     .outer {
       position: absolute;
       left: 20px;
-      top: 100px;
+      top: 120px;
       right: 20px;
       bottom: 20px;
     }
@@ -156,6 +160,7 @@
     <p>
       <label for="target">
         Target: <select id="target">
+          <option>ES5</option>
           <option>ES2015</option>
           <option>ES2016</option>
           <option>ES2017</option>
@@ -172,12 +177,32 @@
           <option>JSX</option>
           <option>TS</option>
           <option>TSX</option>
+          <option>CSS</option>
+          <option>JSON</option>
+          <option>Text</option>
+          <option>Base64</option>
+          <option>DataURL</option>
+          <option>Binary</option>
         </select>
       </label>
       &nbsp; &nbsp;
-      <label for="strict">
-        <input id="strict" type="checkbox">
-        Strict
+      <label for="format">
+        Format: <select id="format">
+          <option selected>Preserve</option>
+          <option>IIFE</option>
+          <option>CJS</option>
+          <option>ESM</option>
+        </select>
+      </label>
+      <br>
+      <label for="ascii">
+        <input id="ascii" type="checkbox">
+        ASCII
+      </label>
+      &nbsp; &nbsp;
+      <label for="keepNames">
+        <input id="keepNames" type="checkbox">
+        Keep Names
       </label>
       &nbsp; &nbsp;
       Minify:
@@ -196,10 +221,12 @@
     const input = document.querySelector('#input textarea')
     const target = document.querySelector('#target')
     const loader = document.querySelector('#loader')
+    const format = document.querySelector('#format')
     const minifySyntax = document.querySelector('#minify-syntax')
     const minifyIdents = document.querySelector('#minify-idents')
     const minifySpaces = document.querySelector('#minify-spaces')
-    const strict = document.querySelector('#strict')
+    const ascii = document.querySelector('#ascii')
+    const keepNames = document.querySelector('#keepNames')
     let runIfIdle
 
     function persistValue(el, key) {
@@ -234,10 +261,12 @@
 
     persistValue(target, 'target')
     persistValue(loader, 'loader')
+    persistValue(format, 'format')
     persistChecked(minifySyntax, 'minifySyntax')
     persistChecked(minifyIdents, 'minifyIdents')
     persistChecked(minifySpaces, 'minifySpaces')
-    persistChecked(strict, 'strict')
+    persistChecked(ascii, 'ascii')
+    persistChecked(keepNames, 'keepNames')
 
     try {
       const old = sessionStorage.getItem('input')
@@ -272,15 +301,17 @@
         service.transform(input.value, {
           target: target.value.toLowerCase(),
           loader: loader.value.toLowerCase(),
+          format: format.value === 'Preserve' ? void 0 : format.value.toLowerCase(),
           minifySyntax: minifySyntax.checked,
           minifyIdentifiers: minifyIdents.checked,
           minifyWhitespace: minifySpaces.checked,
-          strict: strict.checked,
-        }).then(({ js, warnings }) => {
+          charset: ascii.checked ? 'ascii' : 'utf8',
+          keepNames: keepNames.checked,
+        }).then(({ code, warnings }) => {
           let html = messagesToHTML(addKindToMessages(warnings, 'warning'))
-          js = textToHTML(js);
-          if (minifySpaces.checked) js = `<span class="minified">${js}</span>`;
-          output.innerHTML = (html && html + '<hr>') + js;
+          code = textToHTML(code);
+          if (minifySpaces.checked) code = `<span class="minified">${code}</span>`;
+          output.innerHTML = (html && html + '<hr>') + code;
         }, error => {
           let { errors, warnings } = error
           if (errors && warnings) output.innerHTML = messagesToHTML(
@@ -327,11 +358,12 @@
           html += `<span class="terminal-bold">${textToHTML(text)}</span><br>`
           if (location) {
             let indent = renderTabs(location.lineText.slice(0, location.column)).length
-            let underline = location.length > 1 ? '~'.repeat(location.length) : '^'
+            let length = renderTabs(location.lineText.slice(0, location.column + location.length)).length - indent
+            let underline = length > 1 ? '~'.repeat(length) : '^'
             let line = renderTabs(location.lineText)
             html += `<span class="terminal-subtle">${textToHTML(line.slice(0, indent))}</span>`
-            html += `<span class="terminal-underline">${line.slice(indent, indent + location.length)}</span>`
-            html += `<span class="terminal-subtle">${textToHTML(line.slice(indent + location.length))}</span>`
+            html += `<span class="terminal-underline">${line.slice(indent, indent + length)}</span>`
+            html += `<span class="terminal-subtle">${textToHTML(line.slice(indent + length))}</span>`
             html += `<br><span class="terminal-underline">${' '.repeat(indent)}${underline}</span><br>`
           }
           return html

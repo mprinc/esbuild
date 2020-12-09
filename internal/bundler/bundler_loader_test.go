@@ -6,42 +6,32 @@ import (
 	"github.com/evanw/esbuild/internal/config"
 )
 
+var loader_suite = suite{
+	name: "loader",
+}
+
 func TestLoaderFile(t *testing.T) {
-	expectBundled(t, bundled{
+	loader_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.js": `
 				console.log(require('./test.svg'))
 			`,
-
-			// "<svg>$</svg>" generates the file name "test.1HOBn/hi.svg" if the
-			// standard base64 encoding is used instead of the URL base64 encoding
-			"/test.svg": "<svg>$</svg>",
+			"/test.svg": "<svg></svg>",
 		},
 		entryPaths: []string{"/entry.js"},
 		options: config.Options{
-			IsBundling:   true,
+			Mode:         config.ModeBundle,
 			AbsOutputDir: "/out/",
 			ExtensionToLoader: map[string]config.Loader{
 				".js":  config.LoaderJS,
 				".svg": config.LoaderFile,
 			},
 		},
-		expected: map[string]string{
-			"/out/test.1HOBn_hi.svg": "<svg>$</svg>",
-			"/out/entry.js": `// /test.svg
-var require_test = __commonJS((exports, module) => {
-  module.exports = "test.1HOBn_hi.svg";
-});
-
-// /entry.js
-console.log(require_test());
-`,
-		},
 	})
 }
 
 func TestLoaderFileMultipleNoCollision(t *testing.T) {
-	expectBundled(t, bundled{
+	loader_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.js": `
 				console.log(
@@ -56,34 +46,18 @@ func TestLoaderFileMultipleNoCollision(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/dist/out.js",
 			ExtensionToLoader: map[string]config.Loader{
 				".js":  config.LoaderJS,
 				".txt": config.LoaderFile,
 			},
 		},
-		expected: map[string]string{
-			"/dist/test.qUqP5cyx.txt": "test",
-			"/dist/out.js": `// /a/test.txt
-var require_test = __commonJS((exports, module) => {
-  module.exports = "test.qUqP5cyx.txt";
-});
-
-// /b/test.txt
-var require_test2 = __commonJS((exports, module) => {
-  module.exports = "test.qUqP5cyx.txt";
-});
-
-// /entry.js
-console.log(require_test(), require_test2());
-`,
-		},
 	})
 }
 
 func TestJSXSyntaxInJSWithJSXLoader(t *testing.T) {
-	expectBundled(t, bundled{
+	loader_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.js": `
 				console.log(<div/>)
@@ -91,22 +65,17 @@ func TestJSXSyntaxInJSWithJSXLoader(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
 			ExtensionToLoader: map[string]config.Loader{
 				".js": config.LoaderJSX,
 			},
 		},
-		expected: map[string]string{
-			"/out.js": `// /entry.js
-console.log(/* @__PURE__ */ React.createElement("div", null));
-`,
-		},
 	})
 }
 
 func TestRequireCustomExtensionString(t *testing.T) {
-	expectBundled(t, bundled{
+	loader_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.js": `
 				console.log(require('./test.custom'))
@@ -115,28 +84,18 @@ func TestRequireCustomExtensionString(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
 			ExtensionToLoader: map[string]config.Loader{
 				".js":     config.LoaderJS,
 				".custom": config.LoaderText,
 			},
 		},
-		expected: map[string]string{
-			"/out.js": `// /test.custom
-var require_test = __commonJS((exports, module) => {
-  module.exports = "#include <stdio.h>";
-});
-
-// /entry.js
-console.log(require_test());
-`,
-		},
 	})
 }
 
 func TestRequireCustomExtensionBase64(t *testing.T) {
-	expectBundled(t, bundled{
+	loader_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.js": `
 				console.log(require('./test.custom'))
@@ -145,28 +104,18 @@ func TestRequireCustomExtensionBase64(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
 			ExtensionToLoader: map[string]config.Loader{
 				".js":     config.LoaderJS,
 				".custom": config.LoaderBase64,
 			},
 		},
-		expected: map[string]string{
-			"/out.js": `// /test.custom
-var require_test = __commonJS((exports, module) => {
-  module.exports = "YQBigGP/ZA==";
-});
-
-// /entry.js
-console.log(require_test());
-`,
-		},
 	})
 }
 
 func TestRequireCustomExtensionDataURL(t *testing.T) {
-	expectBundled(t, bundled{
+	loader_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.js": `
 				console.log(require('./test.custom'))
@@ -175,28 +124,18 @@ func TestRequireCustomExtensionDataURL(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
 			ExtensionToLoader: map[string]config.Loader{
 				".js":     config.LoaderJS,
 				".custom": config.LoaderDataURL,
 			},
 		},
-		expected: map[string]string{
-			"/out.js": `// /test.custom
-var require_test = __commonJS((exports, module) => {
-  module.exports = "data:application/octet-stream;base64,YQBigGP/ZA==";
-});
-
-// /entry.js
-console.log(require_test());
-`,
-		},
 	})
 }
 
 func TestRequireCustomExtensionPreferLongest(t *testing.T) {
-	expectBundled(t, bundled{
+	loader_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.js": `
 				console.log(require('./test.txt'), require('./test.base64.txt'))
@@ -206,7 +145,7 @@ func TestRequireCustomExtensionPreferLongest(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
 			ExtensionToLoader: map[string]config.Loader{
 				".js":         config.LoaderJS,
@@ -214,26 +153,11 @@ func TestRequireCustomExtensionPreferLongest(t *testing.T) {
 				".base64.txt": config.LoaderBase64,
 			},
 		},
-		expected: map[string]string{
-			"/out.js": `// /test.txt
-var require_test = __commonJS((exports, module) => {
-  module.exports = "test.txt";
-});
-
-// /test.base64.txt
-var require_test_base64 = __commonJS((exports, module) => {
-  module.exports = "dGVzdC5iYXNlNjQudHh0";
-});
-
-// /entry.js
-console.log(require_test(), require_test_base64());
-`,
-		},
 	})
 }
 
 func TestAutoDetectMimeTypeFromExtension(t *testing.T) {
-	expectBundled(t, bundled{
+	loader_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.js": `
 				console.log(require('./test.svg'))
@@ -242,28 +166,18 @@ func TestAutoDetectMimeTypeFromExtension(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
 			ExtensionToLoader: map[string]config.Loader{
 				".js":  config.LoaderJS,
 				".svg": config.LoaderDataURL,
 			},
 		},
-		expected: map[string]string{
-			"/out.js": `// /test.svg
-var require_test = __commonJS((exports, module) => {
-  module.exports = "data:image/svg+xml;base64,YQBigGP/ZA==";
-});
-
-// /entry.js
-console.log(require_test());
-`,
-		},
 	})
 }
 
 func TestLoaderJSONCommonJSAndES6(t *testing.T) {
-	expectBundled(t, bundled{
+	loader_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.js": `
 				const x_json = require('./x.json')
@@ -281,34 +195,51 @@ func TestLoaderJSONCommonJSAndES6(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /x.json
-var require_x = __commonJS((exports, module) => {
-  module.exports = {x: true};
-});
-
-// /y.json
-var y1 = true;
-var y2 = false;
-var y_default = {y1, y2};
-
-// /z.json
-var small = "some small text";
-var if2 = "test keyword imports";
-
-// /entry.js
-const x_json = require_x();
-console.log(x_json, y_default, small, if2);
-`,
 		},
 	})
 }
 
+func TestLoaderJSONInvalidIdentifierES6(t *testing.T) {
+	loader_suite.expectBundled(t, bundled{
+		files: map[string]string{
+			"/entry.js": `
+				import * as ns from './test.json'
+				import * as ns2 from './test2.json'
+				console.log(ns['invalid-identifier'], ns2)
+			`,
+			"/test.json":  `{"invalid-identifier": true}`,
+			"/test2.json": `{"invalid-identifier": true}`,
+		},
+		entryPaths: []string{"/entry.js"},
+		options: config.Options{
+			Mode:          config.ModeBundle,
+			AbsOutputFile: "/out.js",
+		},
+	})
+}
+
+func TestLoaderJSONMissingES6(t *testing.T) {
+	loader_suite.expectBundled(t, bundled{
+		files: map[string]string{
+			"/entry.js": `
+				import {missing} from './test.json'
+			`,
+			"/test.json": `{"present": true}`,
+		},
+		entryPaths: []string{"/entry.js"},
+		options: config.Options{
+			Mode:          config.ModeBundle,
+			AbsOutputFile: "/out.js",
+		},
+		expectedCompileLog: `entry.js: error: No matching export for import "missing"
+`,
+	})
+}
+
 func TestLoaderTextCommonJSAndES6(t *testing.T) {
-	expectBundled(t, bundled{
+	loader_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.js": `
 				const x_txt = require('./x.txt')
@@ -320,28 +251,14 @@ func TestLoaderTextCommonJSAndES6(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /x.txt
-var require_x = __commonJS((exports, module) => {
-  module.exports = "x";
-});
-
-// /y.txt
-var y_default = "y";
-
-// /entry.js
-const x_txt = require_x();
-console.log(x_txt, y_default);
-`,
 		},
 	})
 }
 
 func TestLoaderBase64CommonJSAndES6(t *testing.T) {
-	expectBundled(t, bundled{
+	loader_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.js": `
 				const x_b64 = require('./x.b64')
@@ -353,32 +270,18 @@ func TestLoaderBase64CommonJSAndES6(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
 			ExtensionToLoader: map[string]config.Loader{
 				".js":  config.LoaderJS,
 				".b64": config.LoaderBase64,
 			},
 		},
-		expected: map[string]string{
-			"/out.js": `// /x.b64
-var require_x = __commonJS((exports, module) => {
-  module.exports = "eA==";
-});
-
-// /y.b64
-var y_default = "eQ==";
-
-// /entry.js
-const x_b64 = require_x();
-console.log(x_b64, y_default);
-`,
-		},
 	})
 }
 
 func TestLoaderDataURLCommonJSAndES6(t *testing.T) {
-	expectBundled(t, bundled{
+	loader_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.js": `
 				const x_url = require('./x.txt')
@@ -390,32 +293,18 @@ func TestLoaderDataURLCommonJSAndES6(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
 			ExtensionToLoader: map[string]config.Loader{
 				".js":  config.LoaderJS,
 				".txt": config.LoaderDataURL,
 			},
 		},
-		expected: map[string]string{
-			"/out.js": `// /x.txt
-var require_x = __commonJS((exports, module) => {
-  module.exports = "data:text/plain;charset=utf-8;base64,eA==";
-});
-
-// /y.txt
-var y_default = "data:text/plain;charset=utf-8;base64,eQ==";
-
-// /entry.js
-const x_url = require_x();
-console.log(x_url, y_default);
-`,
-		},
 	})
 }
 
 func TestLoaderFileCommonJSAndES6(t *testing.T) {
-	expectBundled(t, bundled{
+	loader_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.js": `
 				const x_url = require('./x.txt')
@@ -427,28 +316,88 @@ func TestLoaderFileCommonJSAndES6(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
 			ExtensionToLoader: map[string]config.Loader{
 				".js":  config.LoaderJS,
 				".txt": config.LoaderFile,
 			},
 		},
-		expected: map[string]string{
-			"/x.EfatjsUq.txt": `x`,
-			"/y.lcsL_Sl3.txt": `y`,
-			"/out.js": `// /x.txt
-var require_x = __commonJS((exports, module) => {
-  module.exports = "x.EfatjsUq.txt";
-});
+	})
+}
 
-// /y.txt
-var y_default = "y.lcsL_Sl3.txt";
+func TestLoaderJSONNoBundle(t *testing.T) {
+	loader_suite.expectBundled(t, bundled{
+		files: map[string]string{
+			"/test.json": `{"test": 123, "invalid-identifier": true}`,
+		},
+		entryPaths: []string{"/test.json"},
+		options: config.Options{
+			AbsOutputFile: "/out.js",
+		},
+	})
+}
 
-// /entry.js
-const x_url = require_x();
-console.log(x_url, y_default);
-`,
+func TestLoaderJSONNoBundleES6(t *testing.T) {
+	loader_suite.expectBundled(t, bundled{
+		files: map[string]string{
+			"/test.json": `{"test": 123, "invalid-identifier": true}`,
+		},
+		entryPaths: []string{"/test.json"},
+		options: config.Options{
+			Mode:          config.ModeConvertFormat,
+			OutputFormat:  config.FormatESModule,
+			AbsOutputFile: "/out.js",
+		},
+	})
+}
+
+func TestLoaderJSONNoBundleCommonJS(t *testing.T) {
+	loader_suite.expectBundled(t, bundled{
+		files: map[string]string{
+			"/test.json": `{"test": 123, "invalid-identifier": true}`,
+		},
+		entryPaths: []string{"/test.json"},
+		options: config.Options{
+			Mode:          config.ModeConvertFormat,
+			OutputFormat:  config.FormatCommonJS,
+			AbsOutputFile: "/out.js",
+		},
+	})
+}
+
+func TestLoaderJSONNoBundleIIFE(t *testing.T) {
+	loader_suite.expectBundled(t, bundled{
+		files: map[string]string{
+			"/test.json": `{"test": 123, "invalid-identifier": true}`,
+		},
+		entryPaths: []string{"/test.json"},
+		options: config.Options{
+			Mode:          config.ModeConvertFormat,
+			OutputFormat:  config.FormatIIFE,
+			AbsOutputFile: "/out.js",
+		},
+	})
+}
+
+func TestLoaderJSONSharedWithMultipleEntriesIssue413(t *testing.T) {
+	loader_suite.expectBundled(t, bundled{
+		files: map[string]string{
+			"/a.js": `
+				import data from './data.json'
+				console.log('a:', data)
+			`,
+			"/b.js": `
+				import data from './data.json'
+				console.log('b:', data)
+			`,
+			"/data.json": `{"test": 123}`,
+		},
+		entryPaths: []string{"/a.js", "/b.js"},
+		options: config.Options{
+			Mode:         config.ModeBundle,
+			OutputFormat: config.FormatESModule,
+			AbsOutputDir: "/out",
 		},
 	})
 }

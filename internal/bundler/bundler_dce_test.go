@@ -6,8 +6,12 @@ import (
 	"github.com/evanw/esbuild/internal/config"
 )
 
+var dce_suite = suite{
+	name: "dce",
+}
+
 func TestPackageJsonSideEffectsFalseKeepNamedImportES6(t *testing.T) {
-	expectBundled(t, bundled{
+	dce_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/Users/user/project/src/entry.js": `
 				import {foo} from "demo-pkg"
@@ -25,23 +29,14 @@ func TestPackageJsonSideEffectsFalseKeepNamedImportES6(t *testing.T) {
 		},
 		entryPaths: []string{"/Users/user/project/src/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /Users/user/project/node_modules/demo-pkg/index.js
-const foo = 123;
-console.log("hello");
-
-// /Users/user/project/src/entry.js
-console.log(foo);
-`,
 		},
 	})
 }
 
 func TestPackageJsonSideEffectsFalseKeepNamedImportCommonJS(t *testing.T) {
-	expectBundled(t, bundled{
+	dce_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/Users/user/project/src/entry.js": `
 				import {foo} from "demo-pkg"
@@ -59,26 +54,14 @@ func TestPackageJsonSideEffectsFalseKeepNamedImportCommonJS(t *testing.T) {
 		},
 		entryPaths: []string{"/Users/user/project/src/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /Users/user/project/node_modules/demo-pkg/index.js
-var require_demo_pkg = __commonJS((exports) => {
-  exports.foo = 123;
-  console.log("hello");
-});
-
-// /Users/user/project/src/entry.js
-const demo_pkg = __toModule(require_demo_pkg());
-console.log(demo_pkg.foo);
-`,
 		},
 	})
 }
 
 func TestPackageJsonSideEffectsFalseKeepStarImportES6(t *testing.T) {
-	expectBundled(t, bundled{
+	dce_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/Users/user/project/src/entry.js": `
 				import * as ns from "demo-pkg"
@@ -96,27 +79,14 @@ func TestPackageJsonSideEffectsFalseKeepStarImportES6(t *testing.T) {
 		},
 		entryPaths: []string{"/Users/user/project/src/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /Users/user/project/node_modules/demo-pkg/index.js
-const demo_pkg_exports = {};
-__export(demo_pkg_exports, {
-  foo: () => foo
-});
-const foo = 123;
-console.log("hello");
-
-// /Users/user/project/src/entry.js
-console.log(demo_pkg_exports);
-`,
 		},
 	})
 }
 
 func TestPackageJsonSideEffectsFalseKeepStarImportCommonJS(t *testing.T) {
-	expectBundled(t, bundled{
+	dce_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/Users/user/project/src/entry.js": `
 				import * as ns from "demo-pkg"
@@ -134,26 +104,14 @@ func TestPackageJsonSideEffectsFalseKeepStarImportCommonJS(t *testing.T) {
 		},
 		entryPaths: []string{"/Users/user/project/src/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /Users/user/project/node_modules/demo-pkg/index.js
-var require_demo_pkg = __commonJS((exports) => {
-  exports.foo = 123;
-  console.log("hello");
-});
-
-// /Users/user/project/src/entry.js
-const ns = __toModule(require_demo_pkg());
-console.log(ns);
-`,
 		},
 	})
 }
 
 func TestPackageJsonSideEffectsTrueKeepES6(t *testing.T) {
-	expectBundled(t, bundled{
+	dce_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/Users/user/project/src/entry.js": `
 				import "demo-pkg"
@@ -171,22 +129,14 @@ func TestPackageJsonSideEffectsTrueKeepES6(t *testing.T) {
 		},
 		entryPaths: []string{"/Users/user/project/src/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /Users/user/project/node_modules/demo-pkg/index.js
-console.log("hello");
-
-// /Users/user/project/src/entry.js
-console.log("unused import");
-`,
 		},
 	})
 }
 
 func TestPackageJsonSideEffectsTrueKeepCommonJS(t *testing.T) {
-	expectBundled(t, bundled{
+	dce_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/Users/user/project/src/entry.js": `
 				import "demo-pkg"
@@ -204,26 +154,14 @@ func TestPackageJsonSideEffectsTrueKeepCommonJS(t *testing.T) {
 		},
 		entryPaths: []string{"/Users/user/project/src/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /Users/user/project/node_modules/demo-pkg/index.js
-var require_demo_pkg = __commonJS((exports) => {
-  exports.foo = 123;
-  console.log("hello");
-});
-
-// /Users/user/project/src/entry.js
-const demo_pkg = __toModule(require_demo_pkg());
-console.log("unused import");
-`,
 		},
 	})
 }
 
 func TestPackageJsonSideEffectsFalseKeepBareImportAndRequireES6(t *testing.T) {
-	expectBundled(t, bundled{
+	dce_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/Users/user/project/src/entry.js": `
 				import "demo-pkg"
@@ -242,29 +180,19 @@ func TestPackageJsonSideEffectsFalseKeepBareImportAndRequireES6(t *testing.T) {
 		},
 		entryPaths: []string{"/Users/user/project/src/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
 		},
-		expected: map[string]string{
-			"/out.js": `// /Users/user/project/node_modules/demo-pkg/index.js
-var require_demo_pkg = __commonJS((exports) => {
-  __export(exports, {
-    foo: () => foo
-  });
-  const foo = 123;
-  console.log("hello");
-});
-
-// /Users/user/project/src/entry.js
-require_demo_pkg();
-console.log("unused import");
+		expectedScanLog: `Users/user/project/src/entry.js: warning: Ignoring this import because "` +
+			`Users/user/project/node_modules/demo-pkg/index.js" was marked as having no side effects
+Users/user/project/node_modules/demo-pkg/package.json: note: "sideEffects" is false ` +
+			`in the enclosing "package.json" file
 `,
-		},
 	})
 }
 
 func TestPackageJsonSideEffectsFalseKeepBareImportAndRequireCommonJS(t *testing.T) {
-	expectBundled(t, bundled{
+	dce_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/Users/user/project/src/entry.js": `
 				import "demo-pkg"
@@ -283,26 +211,19 @@ func TestPackageJsonSideEffectsFalseKeepBareImportAndRequireCommonJS(t *testing.
 		},
 		entryPaths: []string{"/Users/user/project/src/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
 		},
-		expected: map[string]string{
-			"/out.js": `// /Users/user/project/node_modules/demo-pkg/index.js
-var require_demo_pkg = __commonJS((exports) => {
-  exports.foo = 123;
-  console.log("hello");
-});
-
-// /Users/user/project/src/entry.js
-require_demo_pkg();
-console.log("unused import");
+		expectedScanLog: `Users/user/project/src/entry.js: warning: Ignoring this import because "` +
+			`Users/user/project/node_modules/demo-pkg/index.js" was marked as having no side effects
+Users/user/project/node_modules/demo-pkg/package.json: note: "sideEffects" is false ` +
+			`in the enclosing "package.json" file
 `,
-		},
 	})
 }
 
 func TestPackageJsonSideEffectsFalseRemoveBareImportES6(t *testing.T) {
-	expectBundled(t, bundled{
+	dce_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/Users/user/project/src/entry.js": `
 				import "demo-pkg"
@@ -320,19 +241,19 @@ func TestPackageJsonSideEffectsFalseRemoveBareImportES6(t *testing.T) {
 		},
 		entryPaths: []string{"/Users/user/project/src/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
 		},
-		expected: map[string]string{
-			"/out.js": `// /Users/user/project/src/entry.js
-console.log("unused import");
+		expectedScanLog: `Users/user/project/src/entry.js: warning: Ignoring this import because "` +
+			`Users/user/project/node_modules/demo-pkg/index.js" was marked as having no side effects
+Users/user/project/node_modules/demo-pkg/package.json: note: "sideEffects" is false ` +
+			`in the enclosing "package.json" file
 `,
-		},
 	})
 }
 
 func TestPackageJsonSideEffectsFalseRemoveBareImportCommonJS(t *testing.T) {
-	expectBundled(t, bundled{
+	dce_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/Users/user/project/src/entry.js": `
 				import "demo-pkg"
@@ -350,19 +271,19 @@ func TestPackageJsonSideEffectsFalseRemoveBareImportCommonJS(t *testing.T) {
 		},
 		entryPaths: []string{"/Users/user/project/src/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
 		},
-		expected: map[string]string{
-			"/out.js": `// /Users/user/project/src/entry.js
-console.log("unused import");
+		expectedScanLog: `Users/user/project/src/entry.js: warning: Ignoring this import because "` +
+			`Users/user/project/node_modules/demo-pkg/index.js" was marked as having no side effects
+Users/user/project/node_modules/demo-pkg/package.json: note: "sideEffects" is false ` +
+			`in the enclosing "package.json" file
 `,
-		},
 	})
 }
 
 func TestPackageJsonSideEffectsFalseRemoveNamedImportES6(t *testing.T) {
-	expectBundled(t, bundled{
+	dce_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/Users/user/project/src/entry.js": `
 				import {foo} from "demo-pkg"
@@ -380,19 +301,14 @@ func TestPackageJsonSideEffectsFalseRemoveNamedImportES6(t *testing.T) {
 		},
 		entryPaths: []string{"/Users/user/project/src/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /Users/user/project/src/entry.js
-console.log("unused import");
-`,
 		},
 	})
 }
 
 func TestPackageJsonSideEffectsFalseRemoveNamedImportCommonJS(t *testing.T) {
-	expectBundled(t, bundled{
+	dce_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/Users/user/project/src/entry.js": `
 				import {foo} from "demo-pkg"
@@ -410,19 +326,14 @@ func TestPackageJsonSideEffectsFalseRemoveNamedImportCommonJS(t *testing.T) {
 		},
 		entryPaths: []string{"/Users/user/project/src/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /Users/user/project/src/entry.js
-console.log("unused import");
-`,
 		},
 	})
 }
 
 func TestPackageJsonSideEffectsFalseRemoveStarImportES6(t *testing.T) {
-	expectBundled(t, bundled{
+	dce_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/Users/user/project/src/entry.js": `
 				import * as ns from "demo-pkg"
@@ -440,19 +351,14 @@ func TestPackageJsonSideEffectsFalseRemoveStarImportES6(t *testing.T) {
 		},
 		entryPaths: []string{"/Users/user/project/src/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /Users/user/project/src/entry.js
-console.log("unused import");
-`,
 		},
 	})
 }
 
 func TestPackageJsonSideEffectsFalseRemoveStarImportCommonJS(t *testing.T) {
-	expectBundled(t, bundled{
+	dce_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/Users/user/project/src/entry.js": `
 				import * as ns from "demo-pkg"
@@ -470,19 +376,14 @@ func TestPackageJsonSideEffectsFalseRemoveStarImportCommonJS(t *testing.T) {
 		},
 		entryPaths: []string{"/Users/user/project/src/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /Users/user/project/src/entry.js
-console.log("unused import");
-`,
 		},
 	})
 }
 
 func TestPackageJsonSideEffectsArrayRemove(t *testing.T) {
-	expectBundled(t, bundled{
+	dce_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/Users/user/project/src/entry.js": `
 				import {foo} from "demo-pkg"
@@ -500,19 +401,14 @@ func TestPackageJsonSideEffectsArrayRemove(t *testing.T) {
 		},
 		entryPaths: []string{"/Users/user/project/src/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /Users/user/project/src/entry.js
-console.log("unused import");
-`,
 		},
 	})
 }
 
 func TestPackageJsonSideEffectsArrayKeep(t *testing.T) {
-	expectBundled(t, bundled{
+	dce_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/Users/user/project/src/entry.js": `
 				import {foo} from "demo-pkg"
@@ -530,22 +426,312 @@ func TestPackageJsonSideEffectsArrayKeep(t *testing.T) {
 		},
 		entryPaths: []string{"/Users/user/project/src/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /Users/user/project/node_modules/demo-pkg/index.js
-console.log("hello");
-
-// /Users/user/project/src/entry.js
-console.log("unused import");
-`,
 		},
 	})
 }
 
+func TestPackageJsonSideEffectsArrayKeepMainUseModule(t *testing.T) {
+	dce_suite.expectBundled(t, bundled{
+		files: map[string]string{
+			"/Users/user/project/src/entry.js": `
+				import {foo} from "demo-pkg"
+				console.log('unused import')
+			`,
+			"/Users/user/project/node_modules/demo-pkg/index-main.js": `
+				export const foo = 123
+				console.log('TEST FAILED')
+			`,
+			"/Users/user/project/node_modules/demo-pkg/index-module.js": `
+				export const foo = 123
+				console.log('TEST FAILED')
+			`,
+			"/Users/user/project/node_modules/demo-pkg/package.json": `
+				{
+					"main": "index-main.js",
+					"module": "index-module.js",
+					"sideEffects": ["./index-main.js"]
+				}
+			`,
+		},
+		entryPaths: []string{"/Users/user/project/src/entry.js"},
+		options: config.Options{
+			Mode:          config.ModeBundle,
+			AbsOutputFile: "/out.js",
+			MainFields:    []string{"module"},
+		},
+	})
+}
+
+func TestPackageJsonSideEffectsArrayKeepMainUseMain(t *testing.T) {
+	dce_suite.expectBundled(t, bundled{
+		files: map[string]string{
+			"/Users/user/project/src/entry.js": `
+				import {foo} from "demo-pkg"
+				console.log('unused import')
+			`,
+			"/Users/user/project/node_modules/demo-pkg/index-main.js": `
+				export const foo = 123
+				console.log('this should be kept')
+			`,
+			"/Users/user/project/node_modules/demo-pkg/index-module.js": `
+				export const foo = 123
+				console.log('TEST FAILED')
+			`,
+			"/Users/user/project/node_modules/demo-pkg/package.json": `
+				{
+					"main": "index-main.js",
+					"module": "index-module.js",
+					"sideEffects": ["./index-main.js"]
+				}
+			`,
+		},
+		entryPaths: []string{"/Users/user/project/src/entry.js"},
+		options: config.Options{
+			Mode:          config.ModeBundle,
+			AbsOutputFile: "/out.js",
+			MainFields:    []string{"main"},
+		},
+	})
+}
+
+func TestPackageJsonSideEffectsArrayKeepMainImplicitModule(t *testing.T) {
+	dce_suite.expectBundled(t, bundled{
+		files: map[string]string{
+			"/Users/user/project/src/entry.js": `
+				import {foo} from "demo-pkg"
+				console.log('unused import')
+			`,
+			"/Users/user/project/node_modules/demo-pkg/index-main.js": `
+				export const foo = 123
+				console.log('TEST FAILED')
+			`,
+			"/Users/user/project/node_modules/demo-pkg/index-module.js": `
+				export const foo = 123
+				console.log('TEST FAILED')
+			`,
+			"/Users/user/project/node_modules/demo-pkg/package.json": `
+				{
+					"main": "index-main.js",
+					"module": "index-module.js",
+					"sideEffects": ["./index-main.js"]
+				}
+			`,
+		},
+		entryPaths: []string{"/Users/user/project/src/entry.js"},
+		options: config.Options{
+			Mode:          config.ModeBundle,
+			AbsOutputFile: "/out.js",
+		},
+	})
+}
+
+func TestPackageJsonSideEffectsArrayKeepMainImplicitMain(t *testing.T) {
+	dce_suite.expectBundled(t, bundled{
+		files: map[string]string{
+			"/Users/user/project/src/entry.js": `
+				import {foo} from "demo-pkg"
+				import "./require-demo-pkg"
+				console.log('unused import')
+			`,
+			"/Users/user/project/src/require-demo-pkg.js": `
+				// This causes "index-main.js" to be selected
+				require('demo-pkg')
+			`,
+			"/Users/user/project/node_modules/demo-pkg/index-main.js": `
+				export const foo = 123
+				console.log('this should be kept')
+			`,
+			"/Users/user/project/node_modules/demo-pkg/index-module.js": `
+				export const foo = 123
+				console.log('TEST FAILED')
+			`,
+			"/Users/user/project/node_modules/demo-pkg/package.json": `
+				{
+					"main": "index-main.js",
+					"module": "index-module.js",
+					"sideEffects": ["./index-main.js"]
+				}
+			`,
+		},
+		entryPaths: []string{"/Users/user/project/src/entry.js"},
+		options: config.Options{
+			Mode:          config.ModeBundle,
+			AbsOutputFile: "/out.js",
+		},
+	})
+}
+
+func TestPackageJsonSideEffectsArrayKeepModuleUseModule(t *testing.T) {
+	dce_suite.expectBundled(t, bundled{
+		files: map[string]string{
+			"/Users/user/project/src/entry.js": `
+				import {foo} from "demo-pkg"
+				console.log('unused import')
+			`,
+			"/Users/user/project/node_modules/demo-pkg/index-main.js": `
+				export const foo = 123
+				console.log('TEST FAILED')
+			`,
+			"/Users/user/project/node_modules/demo-pkg/index-module.js": `
+				export const foo = 123
+				console.log('this should be kept')
+			`,
+			"/Users/user/project/node_modules/demo-pkg/package.json": `
+				{
+					"main": "index-main.js",
+					"module": "index-module.js",
+					"sideEffects": ["./index-module.js"]
+				}
+			`,
+		},
+		entryPaths: []string{"/Users/user/project/src/entry.js"},
+		options: config.Options{
+			Mode:          config.ModeBundle,
+			AbsOutputFile: "/out.js",
+			MainFields:    []string{"module"},
+		},
+	})
+}
+
+func TestPackageJsonSideEffectsArrayKeepModuleUseMain(t *testing.T) {
+	dce_suite.expectBundled(t, bundled{
+		files: map[string]string{
+			"/Users/user/project/src/entry.js": `
+				import {foo} from "demo-pkg"
+				console.log('unused import')
+			`,
+			"/Users/user/project/node_modules/demo-pkg/index-main.js": `
+				export const foo = 123
+				console.log('TEST FAILED')
+			`,
+			"/Users/user/project/node_modules/demo-pkg/index-module.js": `
+				export const foo = 123
+				console.log('TEST FAILED')
+			`,
+			"/Users/user/project/node_modules/demo-pkg/package.json": `
+				{
+					"main": "index-main.js",
+					"module": "index-module.js",
+					"sideEffects": ["./index-module.js"]
+				}
+			`,
+		},
+		entryPaths: []string{"/Users/user/project/src/entry.js"},
+		options: config.Options{
+			Mode:          config.ModeBundle,
+			AbsOutputFile: "/out.js",
+			MainFields:    []string{"main"},
+		},
+	})
+}
+
+func TestPackageJsonSideEffectsArrayKeepModuleImplicitModule(t *testing.T) {
+	dce_suite.expectBundled(t, bundled{
+		files: map[string]string{
+			"/Users/user/project/src/entry.js": `
+				import {foo} from "demo-pkg"
+				console.log('unused import')
+			`,
+			"/Users/user/project/node_modules/demo-pkg/index-main.js": `
+				export const foo = 123
+				console.log('TEST FAILED')
+			`,
+			"/Users/user/project/node_modules/demo-pkg/index-module.js": `
+				export const foo = 123
+				console.log('this should be kept')
+			`,
+			"/Users/user/project/node_modules/demo-pkg/package.json": `
+				{
+					"main": "index-main.js",
+					"module": "index-module.js",
+					"sideEffects": ["./index-module.js"]
+				}
+			`,
+		},
+		entryPaths: []string{"/Users/user/project/src/entry.js"},
+		options: config.Options{
+			Mode:          config.ModeBundle,
+			AbsOutputFile: "/out.js",
+		},
+	})
+}
+
+func TestPackageJsonSideEffectsArrayKeepModuleImplicitMain(t *testing.T) {
+	dce_suite.expectBundled(t, bundled{
+		files: map[string]string{
+			"/Users/user/project/src/entry.js": `
+				import {foo} from "demo-pkg"
+				import "./require-demo-pkg"
+				console.log('unused import')
+			`,
+			"/Users/user/project/src/require-demo-pkg.js": `
+				// This causes "index-main.js" to be selected
+				require('demo-pkg')
+			`,
+			"/Users/user/project/node_modules/demo-pkg/index-main.js": `
+				export const foo = 123
+				console.log('this should be kept')
+			`,
+			"/Users/user/project/node_modules/demo-pkg/index-module.js": `
+				export const foo = 123
+				console.log('TEST FAILED')
+			`,
+			"/Users/user/project/node_modules/demo-pkg/package.json": `
+				{
+					"main": "index-main.js",
+					"module": "index-module.js",
+					"sideEffects": ["./index-module.js"]
+				}
+			`,
+		},
+		entryPaths: []string{"/Users/user/project/src/entry.js"},
+		options: config.Options{
+			Mode:          config.ModeBundle,
+			AbsOutputFile: "/out.js",
+		},
+	})
+}
+
+func TestPackageJsonSideEffectsArrayGlob(t *testing.T) {
+	dce_suite.expectBundled(t, bundled{
+		files: map[string]string{
+			"/Users/user/project/src/entry.js": `
+				import "demo-pkg/keep/this/file"
+				import "demo-pkg/remove/this/file"
+			`,
+			"/Users/user/project/node_modules/demo-pkg/keep/this/file.js": `
+				console.log('this should be kept')
+			`,
+			"/Users/user/project/node_modules/demo-pkg/remove/this/file.js": `
+				console.log('TEST FAILED')
+			`,
+			"/Users/user/project/node_modules/demo-pkg/package.json": `
+				{
+					"sideEffects": [
+						"./ke?p/*/file.js",
+						"./remove/this/file.j",
+						"./re?ve/this/file.js"
+					]
+				}
+			`,
+		},
+		entryPaths: []string{"/Users/user/project/src/entry.js"},
+		options: config.Options{
+			Mode:          config.ModeBundle,
+			AbsOutputFile: "/out.js",
+		},
+		expectedScanLog: `Users/user/project/src/entry.js: warning: Ignoring this import because ` +
+			`"Users/user/project/node_modules/demo-pkg/remove/this/file.js" was marked as having no side effects
+Users/user/project/node_modules/demo-pkg/package.json: note: It was excluded from the "sideEffects" ` +
+			`array in the enclosing "package.json" file
+`,
+	})
+}
+
 func TestPackageJsonSideEffectsNestedDirectoryRemove(t *testing.T) {
-	expectBundled(t, bundled{
+	dce_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/Users/user/project/src/entry.js": `
 				import {foo} from "demo-pkg/a/b/c"
@@ -563,19 +749,14 @@ func TestPackageJsonSideEffectsNestedDirectoryRemove(t *testing.T) {
 		},
 		entryPaths: []string{"/Users/user/project/src/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /Users/user/project/src/entry.js
-console.log("unused import");
-`,
 		},
 	})
 }
 
 func TestPackageJsonSideEffectsKeepExportDefaultExpr(t *testing.T) {
-	expectBundled(t, bundled{
+	dce_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/Users/user/project/src/entry.js": `
 				import foo from "demo-pkg"
@@ -592,22 +773,14 @@ func TestPackageJsonSideEffectsKeepExportDefaultExpr(t *testing.T) {
 		},
 		entryPaths: []string{"/Users/user/project/src/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /Users/user/project/node_modules/demo-pkg/index.js
-var demo_pkg_default = exprWithSideEffects();
-
-// /Users/user/project/src/entry.js
-console.log(demo_pkg_default);
-`,
 		},
 	})
 }
 
 func TestJSONLoaderRemoveUnused(t *testing.T) {
-	expectBundled(t, bundled{
+	dce_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.js": `
 				import unused from "./example.json"
@@ -617,19 +790,14 @@ func TestJSONLoaderRemoveUnused(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /entry.js
-console.log("unused import");
-`,
 		},
 	})
 }
 
 func TestTextLoaderRemoveUnused(t *testing.T) {
-	expectBundled(t, bundled{
+	dce_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.js": `
 				import unused from "./example.txt"
@@ -639,19 +807,14 @@ func TestTextLoaderRemoveUnused(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /entry.js
-console.log("unused import");
-`,
 		},
 	})
 }
 
 func TestBase64LoaderRemoveUnused(t *testing.T) {
-	expectBundled(t, bundled{
+	dce_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.js": `
 				import unused from "./example.data"
@@ -661,23 +824,18 @@ func TestBase64LoaderRemoveUnused(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
 			ExtensionToLoader: map[string]config.Loader{
 				".js":   config.LoaderJS,
 				".data": config.LoaderBase64,
 			},
 		},
-		expected: map[string]string{
-			"/out.js": `// /entry.js
-console.log("unused import");
-`,
-		},
 	})
 }
 
 func TestDataURLLoaderRemoveUnused(t *testing.T) {
-	expectBundled(t, bundled{
+	dce_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.js": `
 				import unused from "./example.data"
@@ -687,23 +845,18 @@ func TestDataURLLoaderRemoveUnused(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
 			ExtensionToLoader: map[string]config.Loader{
 				".js":   config.LoaderJS,
 				".data": config.LoaderDataURL,
 			},
 		},
-		expected: map[string]string{
-			"/out.js": `// /entry.js
-console.log("unused import");
-`,
-		},
 	})
 }
 
 func TestFileLoaderRemoveUnused(t *testing.T) {
-	expectBundled(t, bundled{
+	dce_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.js": `
 				import unused from "./example.data"
@@ -713,23 +866,18 @@ func TestFileLoaderRemoveUnused(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
 			ExtensionToLoader: map[string]config.Loader{
 				".js":   config.LoaderJS,
 				".data": config.LoaderFile,
 			},
 		},
-		expected: map[string]string{
-			"/out.js": `// /entry.js
-console.log("unused import");
-`,
-		},
 	})
 }
 
 func TestRemoveUnusedImportMeta(t *testing.T) {
-	expectBundled(t, bundled{
+	dce_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.js": `
 				function foo() {
@@ -740,19 +888,14 @@ func TestRemoveUnusedImportMeta(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /entry.js
-console.log("foo is unused");
-`,
 		},
 	})
 }
 
 func TestRemoveUnusedPureCommentCalls(t *testing.T) {
-	expectBundled(t, bundled{
+	dce_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.js": `
 				function bar() {}
@@ -808,39 +951,14 @@ func TestRemoveUnusedPureCommentCalls(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /entry.js
-function bar() {
-}
-let bare = foo(bar);
-let at_no = /* @__PURE__ */ foo(bar());
-let new_at_no = /* @__PURE__ */ new foo(bar());
-let num_no = /* @__PURE__ */ foo(bar());
-let new_num_no = /* @__PURE__ */ new foo(bar());
-let dot_no = /* @__PURE__ */ foo(sideEffect()).dot(bar());
-let new_dot_no = /* @__PURE__ */ new foo(sideEffect()).dot(bar());
-let nested_no = [1, /* @__PURE__ */ foo(bar()), 2];
-let new_nested_no = [1, /* @__PURE__ */ new foo(bar()), 2];
-let single_at_no = /* @__PURE__ */ foo(bar());
-let new_single_at_no = /* @__PURE__ */ new foo(bar());
-let single_num_no = /* @__PURE__ */ foo(bar());
-let new_single_num_no = /* @__PURE__ */ new foo(bar());
-let bad_no = foo(bar);
-let new_bad_no = new foo(bar);
-let parens_no = foo(bar);
-let new_parens_no = new foo(bar);
-let exp_no = /* @__PURE__ */ foo() ** foo();
-let new_exp_no = /* @__PURE__ */ new foo() ** foo();
-`,
 		},
 	})
 }
 
 func TestTreeShakingReactElements(t *testing.T) {
-	expectBundled(t, bundled{
+	dce_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.jsx": `
 				function Foo() {}
@@ -857,18 +975,186 @@ func TestTreeShakingReactElements(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.jsx"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
 		},
-		expected: map[string]string{
-			"/out.js": `// /entry.jsx
-function Foo() {
+	})
 }
-let d = /* @__PURE__ */ React.createElement("div", null);
-let e = /* @__PURE__ */ React.createElement(Foo, null, d);
-let f = /* @__PURE__ */ React.createElement(React.Fragment, null, e);
-console.log(f);
-`,
+
+func TestDisableTreeShaking(t *testing.T) {
+	defines := config.ProcessDefines(map[string]config.DefineData{
+		"pure":    {CallCanBeUnwrappedIfUnused: true},
+		"some.fn": {CallCanBeUnwrappedIfUnused: true},
+	})
+	dce_suite.expectBundled(t, bundled{
+		files: map[string]string{
+			"/entry.jsx": `
+				import './remove-me'
+				function RemoveMe1() {}
+				let removeMe2 = 0
+				class RemoveMe3 {}
+
+				import './keep-me'
+				function KeepMe1() {}
+				let keepMe2 = <KeepMe1/>
+				function keepMe3() { console.log('side effects') }
+				let keepMe4 = /* @__PURE__ */ keepMe3()
+				let keepMe5 = pure()
+				let keepMe6 = some.fn()
+			`,
+			"/remove-me.js": `
+				export default 'unused'
+			`,
+			"/keep-me/index.js": `
+				console.log('side effects')
+			`,
+			"/keep-me/package.json": `
+				{ "sideEffects": false }
+			`,
+		},
+		entryPaths: []string{"/entry.jsx"},
+		options: config.Options{
+			Mode:                 config.ModeBundle,
+			AbsOutputFile:        "/out.js",
+			IgnoreDCEAnnotations: true,
+			Defines:              &defines,
+		},
+	})
+}
+
+func TestDeadCodeFollowingJump(t *testing.T) {
+	dce_suite.expectBundled(t, bundled{
+		files: map[string]string{
+			"/entry.js": `
+				function testReturn() {
+					if (true) return y + z()
+					if (FAIL) return FAIL
+					if (x) { var y }
+					function z() { KEEP_ME() }
+					return FAIL
+				}
+
+				function testThrow() {
+					if (true) throw y + z()
+					if (FAIL) return FAIL
+					if (x) { var y }
+					function z() { KEEP_ME() }
+					return FAIL
+				}
+
+				function testBreak() {
+					while (true) {
+						if (true) {
+							y + z()
+							break
+						}
+						if (FAIL) return FAIL
+						if (x) { var y }
+						function z() { KEEP_ME() }
+						return FAIL
+					}
+				}
+
+				function testContinue() {
+					while (true) {
+						if (true) {
+							y + z()
+							continue
+						}
+						if (FAIL) return FAIL
+						if (x) { var y }
+						function z() { KEEP_ME() }
+						return FAIL
+					}
+				}
+
+				function testStmts() {
+					return [a, b, c, d, e, f, g, h, i]
+
+					while (x) { var a }
+					while (FAIL) { let FAIL }
+
+					do { var b } while (x)
+					do { let FAIL } while (FAIL)
+
+					for (var c; ;) ;
+					for (let FAIL; ;) ;
+
+					for (var d in x) ;
+					for (let FAIL in FAIL) ;
+
+					for (var e of x) ;
+					for (let FAIL of FAIL) ;
+
+					if (x) { var f }
+					if (FAIL) { let FAIL }
+
+					if (x) ; else { var g }
+					if (FAIL) ; else { let FAIL }
+
+					{ var h }
+					{ let FAIL }
+
+					x: { var i }
+					x: { let FAIL }
+				}
+
+				testReturn()
+				testThrow()
+				testBreak()
+				testContinue()
+				testStmts()
+			`,
+		},
+		entryPaths: []string{"/entry.js"},
+		options: config.Options{
+			Mode:          config.ModeBundle,
+			AbsOutputFile: "/out.js",
+			MangleSyntax:  true,
+		},
+	})
+}
+
+func TestRemoveTrailingReturn(t *testing.T) {
+	dce_suite.expectBundled(t, bundled{
+		files: map[string]string{
+			"/entry.js": `
+				function foo() {
+					if (a) b()
+					return
+				}
+				function bar() {
+					if (a) b()
+					return KEEP_ME
+				}
+				export default [
+					foo,
+					bar,
+					function () {
+						if (a) b()
+						return
+					},
+					function () {
+						if (a) b()
+						return KEEP_ME
+					},
+					() => {
+						if (a) b()
+						return
+					},
+					() => {
+						if (a) b()
+						return KEEP_ME
+					},
+				]
+			`,
+		},
+		entryPaths: []string{"/entry.js"},
+		options: config.Options{
+			Mode:          config.ModeBundle,
+			AbsOutputFile: "/out.js",
+			MangleSyntax:  true,
+			OutputFormat:  config.FormatESModule,
 		},
 	})
 }

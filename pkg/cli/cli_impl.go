@@ -3,25 +3,27 @@ package cli
 import (
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
 	"sort"
 	"strconv"
 	"strings"
 
-	"github.com/evanw/esbuild/internal/logging"
+	"github.com/evanw/esbuild/internal/cli_helpers"
+	"github.com/evanw/esbuild/internal/logger"
 	"github.com/evanw/esbuild/pkg/api"
 )
 
 func newBuildOptions() api.BuildOptions {
 	return api.BuildOptions{
-		Loaders: make(map[string]api.Loader),
-		Defines: make(map[string]string),
+		Loader: make(map[string]api.Loader),
+		Define: make(map[string]string),
 	}
 }
 
 func newTransformOptions() api.TransformOptions {
 	return api.TransformOptions{
-		Defines: make(map[string]string),
+		Define: make(map[string]string),
 	}
 }
 
@@ -69,6 +71,52 @@ func parseOptionsImpl(osArgs []string, buildOpts *api.BuildOptions, transformOpt
 				transformOpts.MinifyIdentifiers = true
 			}
 
+		case strings.HasPrefix(arg, "--charset="):
+			var value *api.Charset
+			if buildOpts != nil {
+				value = &buildOpts.Charset
+			} else {
+				value = &transformOpts.Charset
+			}
+			name := arg[len("--charset="):]
+			switch name {
+			case "ascii":
+				*value = api.CharsetASCII
+			case "utf8":
+				*value = api.CharsetUTF8
+			default:
+				return fmt.Errorf("Invalid charset value: %q (valid: ascii, utf8)", name)
+			}
+
+		case strings.HasPrefix(arg, "--tree-shaking="):
+			var value *api.TreeShaking
+			if buildOpts != nil {
+				value = &buildOpts.TreeShaking
+			} else {
+				value = &transformOpts.TreeShaking
+			}
+			name := arg[len("--tree-shaking="):]
+			switch name {
+			case "ignore-annotations":
+				*value = api.TreeShakingIgnoreAnnotations
+			default:
+				return fmt.Errorf("Invalid tree shaking value: %q (valid: ignore-annotations)", name)
+			}
+
+		case arg == "--avoid-tdz":
+			if buildOpts != nil {
+				buildOpts.AvoidTDZ = true
+			} else {
+				transformOpts.AvoidTDZ = true
+			}
+
+		case arg == "--keep-names":
+			if buildOpts != nil {
+				buildOpts.KeepNames = true
+			} else {
+				transformOpts.KeepNames = true
+			}
+
 		case arg == "--sourcemap":
 			if buildOpts != nil {
 				buildOpts.Sourcemap = api.SourceMapLinked
@@ -106,8 +154,18 @@ func parseOptionsImpl(osArgs []string, buildOpts *api.BuildOptions, transformOpt
 		case strings.HasPrefix(arg, "--resolve-extensions=") && buildOpts != nil:
 			buildOpts.ResolveExtensions = strings.Split(arg[len("--resolve-extensions="):], ",")
 
-		case strings.HasPrefix(arg, "--global-name=") && buildOpts != nil:
-			buildOpts.GlobalName = arg[len("--global-name="):]
+		case strings.HasPrefix(arg, "--main-fields=") && buildOpts != nil:
+			buildOpts.MainFields = strings.Split(arg[len("--main-fields="):], ",")
+
+		case strings.HasPrefix(arg, "--public-path=") && buildOpts != nil:
+			buildOpts.PublicPath = arg[len("--public-path="):]
+
+		case strings.HasPrefix(arg, "--global-name="):
+			if buildOpts != nil {
+				buildOpts.GlobalName = arg[len("--global-name="):]
+			} else {
+				transformOpts.GlobalName = arg[len("--global-name="):]
+			}
 
 		case strings.HasPrefix(arg, "--metafile=") && buildOpts != nil:
 			buildOpts.Metafile = arg[len("--metafile="):]
@@ -118,8 +176,14 @@ func parseOptionsImpl(osArgs []string, buildOpts *api.BuildOptions, transformOpt
 		case strings.HasPrefix(arg, "--outdir=") && buildOpts != nil:
 			buildOpts.Outdir = arg[len("--outdir="):]
 
+		case strings.HasPrefix(arg, "--outbase=") && buildOpts != nil:
+			buildOpts.Outbase = arg[len("--outbase="):]
+
 		case strings.HasPrefix(arg, "--tsconfig=") && buildOpts != nil:
 			buildOpts.Tsconfig = arg[len("--tsconfig="):]
+
+		case strings.HasPrefix(arg, "--tsconfig-raw=") && transformOpts != nil:
+			transformOpts.TsconfigRaw = arg[len("--tsconfig-raw="):]
 
 		case strings.HasPrefix(arg, "--define:"):
 			value := arg[len("--define:"):]
@@ -128,17 +192,17 @@ func parseOptionsImpl(osArgs []string, buildOpts *api.BuildOptions, transformOpt
 				return fmt.Errorf("Missing \"=\": %q", value)
 			}
 			if buildOpts != nil {
-				buildOpts.Defines[value[:equals]] = value[equals+1:]
+				buildOpts.Define[value[:equals]] = value[equals+1:]
 			} else {
-				transformOpts.Defines[value[:equals]] = value[equals+1:]
+				transformOpts.Define[value[:equals]] = value[equals+1:]
 			}
 
 		case strings.HasPrefix(arg, "--pure:"):
 			value := arg[len("--pure:"):]
 			if buildOpts != nil {
-				buildOpts.PureFunctions = append(buildOpts.PureFunctions, value)
+				buildOpts.Pure = append(buildOpts.Pure, value)
 			} else {
-				transformOpts.PureFunctions = append(transformOpts.PureFunctions, value)
+				transformOpts.Pure = append(transformOpts.Pure, value)
 			}
 
 		case strings.HasPrefix(arg, "--loader:") && buildOpts != nil:
@@ -148,15 +212,15 @@ func parseOptionsImpl(osArgs []string, buildOpts *api.BuildOptions, transformOpt
 				return fmt.Errorf("Missing \"=\": %q", value)
 			}
 			ext, text := value[:equals], value[equals+1:]
-			loader, err := parseLoader(text)
+			loader, err := cli_helpers.ParseLoader(text)
 			if err != nil {
 				return err
 			}
-			buildOpts.Loaders[ext] = loader
+			buildOpts.Loader[ext] = loader
 
 		case strings.HasPrefix(arg, "--loader="):
 			value := arg[len("--loader="):]
-			loader, err := parseLoader(value)
+			loader, err := cli_helpers.ParseLoader(value)
 			if err != nil {
 				return err
 			}
@@ -196,34 +260,6 @@ func parseOptionsImpl(osArgs []string, buildOpts *api.BuildOptions, transformOpt
 			}
 			buildOpts.OutExtensions[value[:equals]] = value[equals+1:]
 
-		case arg == "--strict":
-			value := api.StrictOptions{
-				NullishCoalescing: true,
-				ClassFields:       true,
-			}
-			if buildOpts != nil {
-				buildOpts.Strict = value
-			} else {
-				transformOpts.Strict = value
-			}
-
-		case strings.HasPrefix(arg, "--strict:"):
-			var value *api.StrictOptions
-			if buildOpts != nil {
-				value = &buildOpts.Strict
-			} else {
-				value = &transformOpts.Strict
-			}
-			name := arg[len("--strict:"):]
-			switch name {
-			case "nullish-coalescing":
-				value.NullishCoalescing = true
-			case "class-fields":
-				value.ClassFields = true
-			default:
-				return fmt.Errorf("Invalid strict value: %q (valid: nullish-coalescing, class-fields)", name)
-			}
-
 		case strings.HasPrefix(arg, "--platform=") && buildOpts != nil:
 			value := arg[len("--platform="):]
 			switch value {
@@ -235,21 +271,36 @@ func parseOptionsImpl(osArgs []string, buildOpts *api.BuildOptions, transformOpt
 				return fmt.Errorf("Invalid platform: %q (valid: browser, node)", value)
 			}
 
-		case strings.HasPrefix(arg, "--format=") && buildOpts != nil:
+		case strings.HasPrefix(arg, "--format="):
 			value := arg[len("--format="):]
 			switch value {
 			case "iife":
-				buildOpts.Format = api.FormatIIFE
+				if buildOpts != nil {
+					buildOpts.Format = api.FormatIIFE
+				} else {
+					transformOpts.Format = api.FormatIIFE
+				}
 			case "cjs":
-				buildOpts.Format = api.FormatCommonJS
+				if buildOpts != nil {
+					buildOpts.Format = api.FormatCommonJS
+				} else {
+					transformOpts.Format = api.FormatCommonJS
+				}
 			case "esm":
-				buildOpts.Format = api.FormatESModule
+				if buildOpts != nil {
+					buildOpts.Format = api.FormatESModule
+				} else {
+					transformOpts.Format = api.FormatESModule
+				}
 			default:
 				return fmt.Errorf("Invalid format: %q (valid: iife, cjs, esm)", value)
 			}
 
 		case strings.HasPrefix(arg, "--external:") && buildOpts != nil:
-			buildOpts.Externals = append(buildOpts.Externals, arg[len("--external:"):])
+			buildOpts.External = append(buildOpts.External, arg[len("--external:"):])
+
+		case strings.HasPrefix(arg, "--inject:") && buildOpts != nil:
+			buildOpts.Inject = append(buildOpts.Inject, arg[len("--inject:"):])
 
 		case strings.HasPrefix(arg, "--jsx-factory="):
 			value := arg[len("--jsx-factory="):]
@@ -265,6 +316,22 @@ func parseOptionsImpl(osArgs []string, buildOpts *api.BuildOptions, transformOpt
 				buildOpts.JSXFragment = value
 			} else {
 				transformOpts.JSXFragment = value
+			}
+
+		case strings.HasPrefix(arg, "--banner="):
+			value := arg[len("--banner="):]
+			if buildOpts != nil {
+				buildOpts.Banner = value
+			} else {
+				transformOpts.Banner = value
+			}
+
+		case strings.HasPrefix(arg, "--footer="):
+			value := arg[len("--footer="):]
+			if buildOpts != nil {
+				buildOpts.Footer = value
+			} else {
+				transformOpts.Footer = value
 			}
 
 		case strings.HasPrefix(arg, "--error-limit="):
@@ -318,6 +385,9 @@ func parseOptionsImpl(osArgs []string, buildOpts *api.BuildOptions, transformOpt
 			} else {
 				transformOpts.LogLevel = logLevel
 			}
+
+		case strings.HasPrefix(arg, "'--"):
+			return fmt.Errorf("Unexpected single quote character before flag (use \\\" to escape double quotes): %s", arg)
 
 		case !strings.HasPrefix(arg, "-") && buildOpts != nil:
 			buildOpts.EntryPoints = append(buildOpts.EntryPoints, arg)
@@ -392,34 +462,6 @@ outer:
 	return
 }
 
-func parseLoader(text string) (api.Loader, error) {
-	switch text {
-	case "js":
-		return api.LoaderJS, nil
-	case "jsx":
-		return api.LoaderJSX, nil
-	case "ts":
-		return api.LoaderTS, nil
-	case "tsx":
-		return api.LoaderTSX, nil
-	case "json":
-		return api.LoaderJSON, nil
-	case "text":
-		return api.LoaderText, nil
-	case "base64":
-		return api.LoaderBase64, nil
-	case "dataurl":
-		return api.LoaderDataURL, nil
-	case "file":
-		return api.LoaderFile, nil
-	case "binary":
-		return api.LoaderBinary, nil
-	default:
-		return 0, fmt.Errorf("Invalid loader: %q (valid: "+
-			"js, jsx, ts, tsx, json, text, base64, dataurl, file, binary)", text)
-	}
-}
-
 // This returns either BuildOptions, TransformOptions, or an error
 func parseOptionsForRun(osArgs []string) (*api.BuildOptions, *api.TransformOptions, error) {
 	// If there's an entry point or we're bundling, then we're building
@@ -458,6 +500,22 @@ func parseOptionsForRun(osArgs []string) (*api.BuildOptions, *api.TransformOptio
 }
 
 func runImpl(osArgs []string) int {
+	// Special-case running a server
+	for i, arg := range osArgs {
+		if arg == "--serve" {
+			arg = "--serve=0"
+		}
+		if strings.HasPrefix(arg, "--serve=") {
+			serve := arg[len("--serve="):]
+			osArgs = append(append([]string{}, osArgs[:i]...), osArgs[i+1:]...)
+			if err := serveImpl(serve, osArgs); err != nil {
+				logger.PrintErrorToStderr(osArgs, err.Error())
+				return 1
+			}
+			return 0
+		}
+	}
+
 	buildOptions, transformOptions, err := parseOptionsForRun(osArgs)
 
 	switch {
@@ -469,17 +527,18 @@ func runImpl(osArgs []string) int {
 			}
 			bytes, err := ioutil.ReadAll(os.Stdin)
 			if err != nil {
-				logging.PrintErrorToStderr(osArgs, fmt.Sprintf(
+				logger.PrintErrorToStderr(osArgs, fmt.Sprintf(
 					"Could not read from stdin: %s", err.Error()))
 				return 1
 			}
 			buildOptions.Stdin.Contents = string(bytes)
+			buildOptions.Stdin.ResolveDir, _ = os.Getwd()
 		} else if buildOptions.Stdin != nil {
 			if buildOptions.Stdin.Sourcefile != "" {
-				logging.PrintErrorToStderr(osArgs,
+				logger.PrintErrorToStderr(osArgs,
 					"\"sourcefile\" only applies when reading from stdin")
 			} else {
-				logging.PrintErrorToStderr(osArgs,
+				logger.PrintErrorToStderr(osArgs,
 					"\"loader\" without extension only applies when reading from stdin")
 			}
 			return 1
@@ -495,7 +554,7 @@ func runImpl(osArgs []string) int {
 		// Read the input from stdin
 		bytes, err := ioutil.ReadAll(os.Stdin)
 		if err != nil {
-			logging.PrintErrorToStderr(osArgs, fmt.Sprintf(
+			logger.PrintErrorToStderr(osArgs, fmt.Sprintf(
 				"Could not read from stdin: %s", err.Error()))
 			return 1
 		}
@@ -507,12 +566,74 @@ func runImpl(osArgs []string) int {
 		}
 
 		// Write the output to stdout
-		os.Stdout.Write(result.JS)
+		os.Stdout.Write(result.Code)
 
 	case err != nil:
-		logging.PrintErrorToStderr(osArgs, err.Error())
+		logger.PrintErrorToStderr(osArgs, err.Error())
 		return 1
 	}
 
 	return 0
+}
+
+func serveImpl(serveText string, osArgs []string) error {
+	host := ""
+	portText := serveText
+
+	// Specifying the host is optional
+	if strings.ContainsRune(serveText, ':') {
+		var err error
+		host, portText, err = net.SplitHostPort(serveText)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Parse the port
+	port, err := strconv.ParseInt(portText, 10, 32)
+	if err != nil {
+		return err
+	}
+	if port < 0 || port > 0xFFFF {
+		return fmt.Errorf("Invalid port number: %s", portText)
+	}
+
+	options := newBuildOptions()
+
+	// Apply defaults appropriate for the CLI
+	options.ErrorLimit = 5
+	options.LogLevel = api.LogLevelInfo
+
+	if err := parseOptionsImpl(osArgs, &options, nil); err != nil {
+		logger.PrintErrorToStderr(osArgs, err.Error())
+		return err
+	}
+
+	serveOptions := api.ServeOptions{
+		Port: uint16(port),
+		Host: host,
+		OnRequest: func(args api.ServeOnRequestArgs) {
+			logger.PrintText(os.Stderr, logger.LevelInfo, osArgs, func(colors logger.Colors) string {
+				statusColor := colors.Red
+				if args.Status == 200 {
+					statusColor = colors.Green
+				}
+				return fmt.Sprintf("%s%s - %q %s%d%s [%dms]%s\n",
+					colors.Dim, args.RemoteAddress, args.Method+" "+args.Path,
+					statusColor, args.Status, colors.Dim, args.TimeInMS, colors.Default)
+			})
+		},
+	}
+
+	result, err := api.Serve(serveOptions, options)
+	if err != nil {
+		return err
+	}
+
+	// Show what actually got bound if the port was 0
+	logger.PrintText(os.Stderr, logger.LevelInfo, osArgs, func(colors logger.Colors) string {
+		return fmt.Sprintf("%s\n > %shttp://%s:%d/%s\n\n",
+			colors.Default, colors.Underline, result.Host, result.Port, colors.Default)
+	})
+	return result.Wait()
 }

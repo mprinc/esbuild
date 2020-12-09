@@ -1,23 +1,16 @@
 import fs = require('fs');
 import os = require('os');
-import url = require('url');
 import path = require('path');
 import zlib = require('zlib');
 import https = require('https');
+import child_process = require('child_process');
 
-const version = require('./package.json').version;
+declare const ESBUILD_VERSION: string;
+
+const version = ESBUILD_VERSION;
 const binPath = path.join(__dirname, 'bin', 'esbuild');
-const stampPath = path.join(__dirname, 'stamp.txt');
 
 async function installBinaryFromPackage(name: string, fromPath: string, toPath: string): Promise<void> {
-  // It turns out that some package managers (e.g. yarn) sometimes re-run the
-  // postinstall script for this package after we have already been installed.
-  // That means this script must be idempotent. Let's skip the install if it's
-  // already happened.
-  if (fs.existsSync(stampPath)) {
-    return;
-  }
-
   // Try to install from the cache if possible
   const cachePath = getCachePath(name);
   try {
@@ -25,72 +18,88 @@ async function installBinaryFromPackage(name: string, fromPath: string, toPath: 
     fs.copyFileSync(cachePath, toPath);
     fs.chmodSync(toPath, 0o755);
 
+    // Verify that the binary is the correct version
+    validateBinaryVersion(toPath);
+
     // Mark the cache entry as used for LRU
     const now = new Date;
     fs.utimesSync(cachePath, now, now);
-
-    // Mark the operation as successful so this script is idempotent
-    fs.writeFileSync(stampPath, '');
     return;
   } catch {
   }
 
-  // Download the package from npm
-  let officialRegistry = 'registry.npmjs.org';
-  let urls = [`https://${officialRegistry}/${name}/-/${name}-${version}.tgz`];
-  let debug = false;
-
-  // Try downloading from a custom registry first if one is configured
+  // Next, try to install using npm. This should handle various tricky cases
+  // such as environments where requests to npmjs.org will hang (in which case
+  // there is probably a proxy and/or a custom registry configured instead).
+  let buffer: Buffer | undefined;
+  let didFail = false;
   try {
-    let env = url.parse(process.env.npm_config_registry || '');
-    if (env.protocol && env.host && env.pathname && env.host !== officialRegistry) {
-      let query = url.format({ ...env, pathname: path.posix.join(env.pathname, `${name}/${version}`) });
-      try {
-        // Query the API for the tarball location
-        let tarball = JSON.parse((await fetch(query)).toString()).dist.tarball;
-        if (urls.indexOf(tarball) < 0) urls.unshift(tarball);
-      } catch (err) {
-        console.error(`Failed to download ${JSON.stringify(query)}: ${err && err.message || err}`);
-        debug = true;
-      }
+    buffer = installUsingNPM(name, fromPath);
+  } catch (err) {
+    didFail = true;
+    console.error(`Trying to install "${name}" using npm`);
+    console.error(`Failed to install "${name}" using npm: ${err && err.message || err}`);
+  }
+
+  // If that fails, the user could have npm configured incorrectly or could not
+  // have npm installed. Try downloading directly from npm as a last resort.
+  if (!buffer) {
+    const url = `https://registry.npmjs.org/${name}/-/${name}-${version}.tgz`;
+    console.error(`Trying to download ${JSON.stringify(url)}`);
+    try {
+      buffer = extractFileFromTarGzip(await fetch(url), fromPath);
+    } catch (err) {
+      console.error(`Failed to download ${JSON.stringify(url)}: ${err && err.message || err}`);
     }
+  }
+
+  // Give up if none of that worked
+  if (!buffer) {
+    console.error(`Install unsuccessful`);
+    process.exit(1);
+  }
+
+  // Write out the binary executable that was extracted from the package
+  fs.writeFileSync(toPath, buffer, { mode: 0o755 });
+
+  // Verify that the binary is the correct version
+  try {
+    validateBinaryVersion(toPath);
+  } catch (err) {
+    console.error(`The version of the downloaded binary is incorrect: ${err && err.message || err}`);
+    console.error(`Install unsuccessful`);
+    process.exit(1);
+  }
+
+  // Also try to cache the file to speed up future installs
+  try {
+    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+    fs.copyFileSync(toPath, cachePath);
+    cleanCacheLRU(cachePath);
   } catch {
   }
 
-  for (let url of urls) {
-    let tryText = `Trying to download ${JSON.stringify(url)}`;
-    if (debug) console.error(tryText);
+  if (didFail) console.error(`Install successful`);
+}
 
-    try {
-      let buffer = extractFileFromTarGzip(await fetch(url), fromPath);
-      if (debug) console.error(`Install successful`);
+function validateBinaryVersion(binaryPath: string): void {
+  let stdout;
+  try {
+    stdout = child_process.execFileSync(binaryPath, ['--version']).toString().trim();
+  } catch (err) {
+    if (platformKey === 'darwin arm64 LE')
+      throw new Error(`${err && err.message || err}
 
-      // Write out the binary executable that was extracted from the package
-      fs.writeFileSync(toPath, buffer, { mode: 0o755 });
-
-      // Mark the operation as successful so this script is idempotent
-      fs.writeFileSync(stampPath, '');
-
-      // Also try to cache the file to speed up future installs
-      try {
-        fs.mkdirSync(path.dirname(cachePath), { recursive: true });
-        fs.copyFileSync(toPath, cachePath);
-        await cleanCacheLRU(cachePath);
-      } catch {
-      }
-
-      return;
-    }
-
-    catch (err) {
-      if (!debug) console.error(tryText);
-      console.error(`Failed to download ${JSON.stringify(url)}: ${err && err.message || err}`);
-      debug = true;
-    }
+This install script is trying to install the x64 esbuild executable because the
+arm64 esbuild executable is not available yet. Running this executable requires
+the Rosetta 2 binary translator. Please make sure you have Rosetta 2 installed
+before installing esbuild.
+`);
+    throw err;
   }
-
-  console.error(`Install unsuccessful`);
-  process.exit(1);
+  if (stdout !== version) {
+    throw new Error(`Expected ${JSON.stringify(version)} but got ${JSON.stringify(stdout)}`);
+  }
 }
 
 function getCachePath(name: string): string {
@@ -101,23 +110,27 @@ function getCachePath(name: string): string {
   return path.join(home, '.cache', ...common);
 }
 
-async function cleanCacheLRU(fileToKeep: string): Promise<void> {
+function cleanCacheLRU(fileToKeep: string): void {
   // Gather all entries in the cache
   const dir = path.dirname(fileToKeep);
   const entries: { path: string, mtime: Date }[] = [];
-  await Promise.all(fs.readdirSync(dir).map(entry => new Promise(resolve => {
+  for (const entry of fs.readdirSync(dir)) {
     const entryPath = path.join(dir, entry);
-    fs.stat(entryPath, (err, stats) => {
-      if (!err) entries.push({ path: entryPath, mtime: stats.mtime });
-      resolve();
-    });
-  })));
+    try {
+      const stats = fs.statSync(entryPath);
+      entries.push({ path: entryPath, mtime: stats.mtime });
+    } catch {
+    }
+  }
 
   // Only keep the most recent entries
   entries.sort((a, b) => +b.mtime - +a.mtime);
-  await Promise.all(entries.slice(5).map(entry => new Promise(resolve => {
-    fs.unlink(entry.path, resolve);
-  })));
+  for (const entry of entries.slice(5)) {
+    try {
+      fs.unlinkSync(entry.path);
+    } catch {
+    }
+  }
 }
 
 function fetch(url: string): Promise<Buffer> {
@@ -142,6 +155,7 @@ function extractFileFromTarGzip(buffer: Buffer, file: string): Buffer {
   }
   let str = (i: number, n: number) => String.fromCharCode(...buffer.subarray(i, i + n)).replace(/\0.*$/, '');
   let offset = 0;
+  file = `package/${file}`;
   while (offset < buffer.length) {
     let name = str(offset, 100);
     let size = parseInt(str(offset + 124, 12), 8);
@@ -154,55 +168,134 @@ function extractFileFromTarGzip(buffer: Buffer, file: string): Buffer {
   throw new Error(`Could not find ${JSON.stringify(file)} in archive`);
 }
 
-function installOnUnix(name: string): void {
+function installUsingNPM(name: string, file: string): Buffer {
+  const installDir = path.join(os.tmpdir(), 'esbuild-' + Math.random().toString(36).slice(2));
+  fs.mkdirSync(installDir, { recursive: true });
+  fs.writeFileSync(path.join(installDir, 'package.json'), '{}');
+
+  // Erase "npm_config_global" so that "npm install --global esbuild" works.
+  // Otherwise this nested "npm install" will also be global, and the install
+  // will deadlock waiting for the global installation lock.
+  const env = { ...process.env, npm_config_global: undefined };
+
+  child_process.execSync(`npm install --loglevel=error --prefer-offline --no-audit --progress=false ${name}@${version}`,
+    { cwd: installDir, stdio: 'pipe', env });
+  const buffer = fs.readFileSync(path.join(installDir, 'node_modules', name, file));
+  try {
+    removeRecursive(installDir);
+  } catch (e) {
+    // Removing a file or directory can randomly break on Windows, returning
+    // EBUSY for an arbitrary length of time. I think this happens when some
+    // other program has that file or directory open (e.g. an anti-virus
+    // program). This is fine on Unix because the OS just unlinks the entry
+    // but keeps the reference around until it's unused. In this case we just
+    // ignore errors because this directory is in a temporary directory, so in
+    // theory it should get cleaned up eventually anyway.
+  }
+  return buffer;
+}
+
+function removeRecursive(dir: string): void {
+  for (const entry of fs.readdirSync(dir)) {
+    const entryPath = path.join(dir, entry);
+    let stats;
+    try {
+      stats = fs.lstatSync(entryPath);
+    } catch (e) {
+      continue; // Guard against https://github.com/nodejs/node/issues/4760
+    }
+    if (stats.isDirectory()) removeRecursive(entryPath);
+    else fs.unlinkSync(entryPath);
+  }
+  fs.rmdirSync(dir);
+}
+
+function isYarnBerryOrNewer(): boolean {
+  const { npm_config_user_agent } = process.env;
+  if (npm_config_user_agent) {
+    const match = npm_config_user_agent.match(/yarn\/(\d+)/);
+    if (match && match[1]) {
+      return parseInt(match[1], 10) >= 2;
+    }
+  }
+  return false;
+}
+
+function installDirectly(name: string) {
   if (process.env.ESBUILD_BIN_PATH_FOR_TESTS) {
     fs.unlinkSync(binPath);
     fs.symlinkSync(process.env.ESBUILD_BIN_PATH_FOR_TESTS, binPath);
+    validateBinaryVersion(process.env.ESBUILD_BIN_PATH_FOR_TESTS);
   } else {
-    installBinaryFromPackage(name, 'package/bin/esbuild', binPath)
+    installBinaryFromPackage(name, 'bin/esbuild', binPath)
       .catch(e => setImmediate(() => { throw e; }));
   }
 }
 
-function installOnWindows(name: string): void {
+function installWithWrapper(name: string, fromPath: string, toPath: string): void {
   fs.writeFileSync(
     binPath,
     `#!/usr/bin/env node
 const path = require('path');
-const esbuild_exe = path.join(__dirname, '..', 'esbuild.exe');
+const esbuild_exe = path.join(__dirname, '..', ${JSON.stringify(toPath)});
 const child_process = require('child_process');
-child_process.spawnSync(esbuild_exe, process.argv.slice(2), { stdio: 'inherit' });
+const { status } = child_process.spawnSync(esbuild_exe, process.argv.slice(2), { stdio: 'inherit' });
+process.exitCode = status === null ? 1 : status;
 `);
-  const exePath = path.join(__dirname, 'esbuild.exe');
+  const absToPath = path.join(__dirname, toPath);
   if (process.env.ESBUILD_BIN_PATH_FOR_TESTS) {
-    fs.copyFileSync(process.env.ESBUILD_BIN_PATH_FOR_TESTS, exePath);
+    fs.copyFileSync(process.env.ESBUILD_BIN_PATH_FOR_TESTS, absToPath);
+    validateBinaryVersion(process.env.ESBUILD_BIN_PATH_FOR_TESTS);
   } else {
-    installBinaryFromPackage(name, 'package/esbuild.exe', exePath)
+    installBinaryFromPackage(name, fromPath, absToPath)
       .catch(e => setImmediate(() => { throw e; }));
   }
 }
 
-const key = `${process.platform} ${os.arch()} ${os.endianness()}`;
+function installOnUnix(name: string): void {
+  // Yarn 2 is deliberately incompatible with binary modules because the
+  // developers of Yarn 2 don't think they should be used. See this thread for
+  // details: https://github.com/yarnpkg/berry/issues/882.
+  //
+  // We want to avoid slowing down esbuild for everyone just because of this
+  // decision by the Yarn 2 developers, so we explicitly detect if esbuild is
+  // being installed using Yarn 2 and install a compatability shim only for
+  // Yarn 2. Normal package managers can just run the binary directly for
+  // maximum speed.
+  if (isYarnBerryOrNewer()) {
+    installWithWrapper(name, "bin/esbuild", "esbuild");
+  } else {
+    installDirectly(name);
+  }
+}
+
+function installOnWindows(name: string): void {
+  installWithWrapper(name, "esbuild.exe", "esbuild.exe");
+}
+
+const platformKey = `${process.platform} ${os.arch()} ${os.endianness()}`;
 const knownWindowsPackages: Record<string, string> = {
   'win32 ia32 LE': 'esbuild-windows-32',
   'win32 x64 LE': 'esbuild-windows-64',
 };
 const knownUnixlikePackages: Record<string, string> = {
   'darwin x64 LE': 'esbuild-darwin-64',
+  'darwin arm64 LE': 'esbuild-darwin-64',
   'freebsd arm64 LE': 'esbuild-freebsd-arm64',
   'freebsd x64 LE': 'esbuild-freebsd-64',
   'linux arm64 LE': 'esbuild-linux-arm64',
   'linux ia32 LE': 'esbuild-linux-32',
+  'linux mips64el LE': 'esbuild-linux-mips64le',
   'linux ppc64 LE': 'esbuild-linux-ppc64le',
   'linux x64 LE': 'esbuild-linux-64',
 };
 
 // Pick a package to install
-if (key in knownWindowsPackages) {
-  installOnWindows(knownWindowsPackages[key]);
-} else if (key in knownUnixlikePackages) {
-  installOnUnix(knownUnixlikePackages[key]);
+if (platformKey in knownWindowsPackages) {
+  installOnWindows(knownWindowsPackages[platformKey]);
+} else if (platformKey in knownUnixlikePackages) {
+  installOnUnix(knownUnixlikePackages[platformKey]);
 } else {
-  console.error(`Unsupported platform: ${key}`);
+  console.error(`Unsupported platform: ${platformKey}`);
   process.exit(1);
 }

@@ -14,16 +14,13 @@
 
   const childProcess = await import('child_process')
   const { default: { buildBinary, dirname } } = await import('./esbuild.js')
-  const { default: mkdirp } = await import('mkdirp')
   const { default: rimraf } = await import('rimraf')
   const assert = await import('assert')
   const path = await import('path')
   const util = await import('util')
   const url = await import('url')
-  const fs = await import('fs')
+  const fs = (await import('fs')).promises
 
-  const symlinkAsync = util.promisify(fs.symlink)
-  const writeFileAsync = util.promisify(fs.writeFile)
   const execFileAsync = util.promisify(childProcess.execFile)
 
   const testDir = path.join(dirname, '.end-to-end-tests')
@@ -92,6 +89,104 @@
     )
   }
 
+  let simpleCyclicImportTestCase542 = {
+    'in.js': `
+      import {Test} from './lib';
+      export function fn() {
+        return 42;
+      }
+      export const foo = [Test];
+      if (Test.method() !== 42) throw 'fail'
+    `,
+    'lib.js': `
+      import {fn} from './in';
+      export class Test {
+        static method() {
+          return fn();
+        }
+      }
+    `,
+  }
+
+  // Test internal import order
+  tests.push(
+    // See https://github.com/evanw/esbuild/issues/421
+    test(['--bundle', 'in.js', '--outfile=node.js'], {
+      'in.js': `
+        import {foo} from './cjs'
+        import {bar} from './esm'
+        if (foo !== 1 || bar !== 2) throw 'fail'
+      `,
+      'cjs.js': `exports.foo = 1; global.internal_import_order_test1 = 2`,
+      'esm.js': `export let bar = global.internal_import_order_test1`,
+    }),
+    test(['--bundle', 'in.js', '--outfile=node.js'], {
+      'in.js': `
+        if (foo !== 3 || bar !== 4) throw 'fail'
+        import {foo} from './cjs'
+        import {bar} from './esm'
+      `,
+      'cjs.js': `exports.foo = 3; global.internal_import_order_test2 = 4`,
+      'esm.js': `export let bar = global.internal_import_order_test2`,
+    }),
+
+    // See https://github.com/evanw/esbuild/issues/542
+    test(['--bundle', 'in.js', '--outfile=node.js'], simpleCyclicImportTestCase542),
+    test(['--bundle', 'in.js', '--outfile=node.js', '--format=iife'], simpleCyclicImportTestCase542),
+    test(['--bundle', 'in.js', '--outfile=node.js', '--format=iife', '--global-name=someName'], simpleCyclicImportTestCase542),
+  )
+
+  // Test CommonJS semantics
+  tests.push(
+    // "module.require" should work with internal modules
+    test(['--bundle', 'in.js', '--outfile=out.js', '--format=cjs'], {
+      'in.js': `export {foo, req} from './foo'`,
+      'foo.js': `exports.req = module.require; exports.foo = module.require('./bar')`,
+      'bar.js': `exports.bar = 123`,
+      'node.js': `if (require('./out').foo.bar !== 123 || require('./out').req !== undefined) throw 'fail'`,
+    }),
+    test(['--bundle', 'in.js', '--outfile=out.js', '--format=cjs'], {
+      'in.js': `export {foo, req} from './foo'`,
+      'foo.js': `exports.req = module['require']; exports.foo = module['require']('./bar')`,
+      'bar.js': `exports.bar = 123`,
+      'node.js': `if (require('./out').foo.bar !== 123 || require('./out').req !== undefined) throw 'fail'`,
+    }),
+
+    // "module.require" should work with external modules
+    test(['--bundle', 'in.js', '--outfile=out.js', '--format=cjs', '--external:fs'], {
+      'in.js': `export {foo} from './foo'`,
+      'foo.js': `exports.foo = module.require('fs').exists`,
+      'node.js': `if (require('./out').foo !== require('fs').exists) throw 'fail'`,
+    }),
+    test(['--bundle', 'in.js', '--outfile=out.js', '--format=cjs'], {
+      'in.js': `export {foo} from './foo'`,
+      'foo.js': `let fn = (m, p) => m.require(p); exports.foo = fn(module, 'fs').exists`,
+      'node.js': `try { require('./out') } catch (e) { return } throw 'fail'`,
+    }),
+
+    // "module.exports" should behave like a normal property
+    test(['--bundle', 'in.js', '--outfile=out.js', '--format=cjs'], {
+      'in.js': `export {foo} from './foo'`,
+      'foo.js': `exports.foo = module.exports`,
+      'node.js': `if (require('./out').foo !== require('./out').foo.foo) throw 'fail'`,
+    }),
+    test(['--bundle', 'in.js', '--outfile=out.js', '--format=cjs'], {
+      'in.js': `export {default} from './foo'`,
+      'foo.js': `module.exports = 123`,
+      'node.js': `if (require('./out').default !== 123) throw 'fail'`,
+    }),
+    test(['--bundle', 'in.js', '--outfile=out.js', '--format=cjs'], {
+      'in.js': `export {default} from './foo'`,
+      'foo.js': `let m = module; m.exports = 123`,
+      'node.js': `if (require('./out').default !== 123) throw 'fail'`,
+    }),
+    test(['--bundle', 'in.js', '--outfile=out.js', '--format=cjs'], {
+      'in.js': `export {default} from './foo'`,
+      'foo.js': `let fn = (m, x) => m.exports = x; fn(module, 123)`,
+      'node.js': `if (require('./out').default !== 123) throw 'fail'`,
+    }),
+  )
+
   // Test internal CommonJS export
   tests.push(
     test(['--bundle', 'in.js', '--outfile=node.js'], {
@@ -124,43 +219,82 @@
     test(['--bundle', 'in.js', '--outfile=node.js'], {
       'in.js': `export default 123; const out = require('./in'); if (!out.__esModule || out.default !== 123) throw 'fail'`,
     }),
+
+    // Complex circular import case, must not crash
+    test(['--bundle', 'in.js', '--outfile=node.js'], {
+      'in.js': `
+        import {bar} from './re-export'
+        if (bar() !== 123) throw 'fail'
+      `,
+      're-export.js': `
+        export * from './foo'
+        export * from './bar'
+      `,
+      'foo.js': `
+        export function foo() {
+          return module.exports.foo ? 123 : 234 // "module" makes this a CommonJS file
+        }
+      `,
+      'bar.js': `
+        import {getFoo} from './get'
+        export let bar = getFoo(module) // "module" makes this a CommonJS file
+      `,
+      'get.js': `
+        import {foo} from './foo'
+        export function getFoo() {
+          return foo
+        }
+      `,
+    }),
   )
 
   // Test internal ES6 export
-  tests.push(
-    test(['--bundle', 'in.js', '--outfile=node.js'], {
-      'in.js': `import * as out from './foo'; if (out.foo !== 123) throw 'fail'`,
-      'foo.js': `exports.foo = 123`,
-    }),
-    test(['--bundle', 'in.js', '--outfile=node.js'], {
-      'in.js': `import * as out from './foo'; if (out.default !== 123) throw 'fail'`,
-      'foo.js': `module.exports = 123`,
-    }),
-    test(['--bundle', 'in.js', '--outfile=node.js'], {
-      'in.js': `import * as out from './foo'; if (out.foo !== 123) throw 'fail'`,
-      'foo.js': `export const foo = 123`,
-    }),
-    test(['--bundle', 'in.js', '--outfile=node.js'], {
-      'in.js': `import * as out from './foo'; if (out.default !== 123) throw 'fail'`,
-      'foo.js': `export default 123`,
-    }),
+  for (const minify of [[], ['--minify']]) {
+    for (const target of ['es5', 'es6']) {
+      tests.push(
+        test(['--bundle', 'in.js', '--outfile=node.js', '--target=' + target].concat(minify), {
+          'in.js': `import * as out from './foo'; if (out.foo !== 123) throw 'fail'`,
+          'foo.js': `exports.foo = 123`,
+        }),
+        test(['--bundle', 'in.js', '--outfile=node.js', '--target=' + target].concat(minify), {
+          'in.js': `import * as out from './foo'; if (out.default !== 123) throw 'fail'`,
+          'foo.js': `module.exports = 123`,
+        }),
+        test(['--bundle', 'in.js', '--outfile=node.js', '--target=' + target].concat(minify), {
+          'in.js': `import * as out from './foo'; if (out.default !== null) throw 'fail'`,
+          'foo.js': `module.exports = null`,
+        }),
+        test(['--bundle', 'in.js', '--outfile=node.js', '--target=' + target].concat(minify), {
+          'in.js': `import * as out from './foo'; if (out.default !== void 0) throw 'fail'`,
+          'foo.js': `module.exports = void 0`,
+        }),
+        test(['--bundle', 'in.js', '--outfile=node.js', '--target=' + target].concat(minify), {
+          'in.js': `import * as out from './foo'; if (out.foo !== 123) throw 'fail'`,
+          'foo.js': `export var foo = 123`,
+        }),
+        test(['--bundle', 'in.js', '--outfile=node.js', '--target=' + target].concat(minify), {
+          'in.js': `import * as out from './foo'; if (out.default !== 123) throw 'fail'`,
+          'foo.js': `export default 123`,
+        }),
 
-    // Self export
-    test(['--bundle', 'in.js', '--outfile=node.js'], {
-      // Exporting like this doesn't work, but that's ok
-      'in.js': `exports.foo = 123; import * as out from './in'; if (out.foo !== undefined) throw 'fail'`,
-    }),
-    test(['--bundle', 'in.js', '--outfile=node.js'], {
-      // Exporting like this doesn't work, but that's ok
-      'in.js': `module.exports = {foo: 123}; import * as out from './in'; if (out.foo !== undefined) throw 'fail'`,
-    }),
-    test(['--bundle', 'in.js', '--outfile=node.js'], {
-      'in.js': `export const foo = 123; import * as out from './in'; if (out.foo !== 123) throw 'fail'`,
-    }),
-    test(['--bundle', 'in.js', '--outfile=node.js'], {
-      'in.js': `export default 123; import * as out from './in'; if (out.default !== 123) throw 'fail'`,
-    }),
-  )
+        // Self export
+        test(['--bundle', 'in.js', '--outfile=node.js', '--target=' + target].concat(minify), {
+          // Exporting like this doesn't work, but that's ok
+          'in.js': `exports.foo = 123; import * as out from './in'; if (out.foo !== undefined) throw 'fail'`,
+        }),
+        test(['--bundle', 'in.js', '--outfile=node.js', '--target=' + target].concat(minify), {
+          // Exporting like this doesn't work, but that's ok
+          'in.js': `module.exports = {foo: 123}; import * as out from './in'; if (out.foo !== undefined) throw 'fail'`,
+        }),
+        test(['--bundle', 'in.js', '--outfile=node.js', '--target=' + target].concat(minify), {
+          'in.js': `export var foo = 123; import * as out from './in'; if (out.foo !== 123) throw 'fail'`,
+        }),
+        test(['--bundle', 'in.js', '--outfile=node.js', '--target=' + target].concat(minify), {
+          'in.js': `export default 123; import * as out from './in'; if (out.default !== 123) throw 'fail'`,
+        }),
+      )
+    }
+  }
 
   // Test external CommonJS export
   tests.push(
@@ -199,6 +333,48 @@
     test(['--bundle', 'foo.js', '--outfile=out.js', '--format=esm'], {
       'foo.js': `export default 123`,
       'node.js': `import out from './out.js'; if (out !== 123) throw 'fail'`,
+    }),
+
+    // External package
+    test(['--bundle', 'foo.js', '--outfile=out.js', '--format=cjs', '--external:fs'], {
+      'foo.js': `import {exists} from "fs"; export {exists}`,
+      'node.js': `const out = require('./out'); if (!out.__esModule || out.exists !== require('fs').exists) throw 'fail'`,
+    }),
+    test(['--bundle', 'foo.js', '--outfile=out.js', '--format=esm', '--external:fs'], {
+      'foo.js': `import {exists} from "fs"; export {exists}`,
+      'node.js': `import {exists} from "./out.js"; import * as fs from "fs"; if (exists !== fs.exists) throw 'fail'`,
+    }),
+    test(['--bundle', 'foo.js', '--outfile=out.js', '--format=cjs', '--external:fs'], {
+      'foo.js': `import * as fs from "fs"; export let exists = fs.exists`,
+      'node.js': `const out = require('./out'); if (!out.__esModule || out.exists !== require('fs').exists) throw 'fail'`,
+    }),
+    test(['--bundle', 'foo.js', '--outfile=out.js', '--format=esm', '--external:fs'], {
+      'foo.js': `import * as fs from "fs"; export let exists = fs.exists`,
+      'node.js': `import {exists} from "./out.js"; import * as fs from "fs"; if (exists !== fs.exists) throw 'fail'`,
+    }),
+    test(['--bundle', 'foo.js', '--outfile=out.js', '--format=cjs', '--external:fs'], {
+      'foo.js': `export {exists} from "fs"`,
+      'node.js': `const out = require('./out'); if (!out.__esModule || out.exists !== require('fs').exists) throw 'fail'`,
+    }),
+    test(['--bundle', 'foo.js', '--outfile=out.js', '--format=esm', '--external:fs'], {
+      'foo.js': `export {exists} from "fs"`,
+      'node.js': `import {exists} from "./out.js"; import * as fs from "fs"; if (exists !== fs.exists) throw 'fail'`,
+    }),
+    test(['--bundle', 'foo.js', '--outfile=out.js', '--format=cjs', '--external:fs'], {
+      'foo.js': `export * from "fs"`,
+      'node.js': `const out = require('./out'); if (!out.__esModule || out.exists !== require('fs').exists) throw 'fail'`,
+    }),
+    test(['--bundle', 'foo.js', '--outfile=out.js', '--format=esm', '--external:fs'], {
+      'foo.js': `export * from "fs"`,
+      'node.js': `import {exists} from "./out.js"; import * as fs from "fs"; if (exists !== fs.exists) throw 'fail'`,
+    }),
+    test(['--bundle', 'foo.js', '--outfile=out.js', '--format=cjs', '--external:fs'], {
+      'foo.js': `export * as star from "fs"`,
+      'node.js': `const out = require('./out'); if (!out.__esModule || out.star.exists !== require('fs').exists) throw 'fail'`,
+    }),
+    test(['--bundle', 'foo.js', '--outfile=out.js', '--format=esm', '--external:fs'], {
+      'foo.js': `export * as star from "fs"`,
+      'node.js': `import {star} from "./out.js"; import * as fs from "fs"; if (star.exists !== fs.exists) throw 'fail'`,
     }),
   )
 
@@ -249,84 +425,528 @@
     }),
   )
 
+  // Test imports not being able to access the namespace object
+  tests.push(
+    test(['in.js', '--outfile=node.js', '--bundle'], {
+      'in.js': `
+        import {foo} from './esm'
+        if (foo !== 123) throw 'fail'
+      `,
+      'esm.js': `Object.defineProperty(exports, 'foo', {value: 123, enumerable: false})`,
+    }),
+    test(['in.js', '--outfile=node.js', '--bundle'], {
+      'in.js': `
+        import * as ns from './esm'
+        if (ns[Math.random() < 2 && 'foo'] !== 123) throw 'fail'
+      `,
+      'esm.js': `Object.defineProperty(exports, 'foo', {value: 123, enumerable: false})`,
+    }),
+  )
+
+  // Test imports of properties from the prototype chain of "module.exports" for Webpack compatibility
+  tests.push(
+    // Imports
+    test(['in.js', '--outfile=node.js', '--bundle'], {
+      'in.js': `
+        import def from './cjs-proto'
+        import {prop} from './cjs-proto'
+        if (def.prop !== 123 || prop !== 123) throw 'fail'
+      `,
+      'cjs-proto.js': `module.exports = Object.create({prop: 123})`,
+    }),
+    test(['in.js', '--outfile=node.js', '--bundle'], {
+      'in.js': `
+        import def, {prop} from './cjs-proto' // The TypeScript compiler fails with this syntax
+        if (def.prop !== 123 || prop !== 123) throw 'fail'
+      `,
+      'cjs-proto.js': `module.exports = Object.create({prop: 123})`,
+    }),
+    test(['in.js', '--outfile=node.js', '--bundle'], {
+      'in.js': `
+        import * as star from './cjs-proto'
+        if (!star.default || star.default.prop !== 123 || star.prop !== 123) throw 'fail'
+      `,
+      'cjs-proto.js': `module.exports = Object.create({prop: 123})`,
+    }),
+
+    // Re-exports
+    test(['in.js', '--outfile=node.js', '--bundle'], {
+      'in.js': `
+        import * as test from './reexport'
+        if (test.def.prop !== 123 || test.prop !== 123) throw 'fail'
+      `,
+      'reexport.js': `
+        export {default as def} from './cjs-proto'
+        export {prop} from './cjs-proto'
+      `,
+      'cjs-proto.js': `module.exports = Object.create({prop: 123})`,
+    }),
+    test(['in.js', '--outfile=node.js', '--bundle'], {
+      'in.js': `
+        import * as test from './reexport'
+        if (test.def.prop !== 123 || test.prop !== 123) throw 'fail'
+      `,
+      'reexport.js': `
+        export {default as def, prop} from './cjs-proto' // The TypeScript compiler fails with this syntax
+      `,
+      'cjs-proto.js': `module.exports = Object.create({prop: 123})`,
+    }),
+    test(['in.js', '--outfile=node.js', '--bundle'], {
+      'in.js': `
+        import * as test from './reexport'
+        // Note: the specification says to ignore default exports in "export * from"
+        // Note: re-exporting prototype properties using "export * from" is not supported
+        if (test.default || test.prop !== void 0) throw 'fail'
+      `,
+      'reexport.js': `
+        export * from './cjs-proto'
+      `,
+      'cjs-proto.js': `module.exports = Object.create({prop: 123})`,
+    }),
+    test(['in.js', '--outfile=node.js', '--bundle'], {
+      'in.js': `
+        import {star} from './reexport'
+        if (!star.default || star.default.prop !== 123 || star.prop !== 123) throw 'fail'
+      `,
+      'reexport.js': `
+        export * as star from './cjs-proto'
+      `,
+      'cjs-proto.js': `module.exports = Object.create({prop: 123})`,
+    }),
+  )
+
+  // Test for format conversion without bundling
+  tests.push(
+    // ESM => ESM
+    test(['in.js', '--outfile=node.js', '--format=esm'], {
+      'in.js': `
+        import {exists} from 'fs'
+        if (!exists) throw 'fail'
+      `,
+    }),
+    test(['in.js', '--outfile=node.js', '--format=esm'], {
+      'in.js': `
+        import fs from 'fs'
+        if (!fs.exists) throw 'fail'
+      `,
+    }),
+    test(['in.js', '--outfile=node.js', '--format=esm'], {
+      'in.js': `
+        import * as fs from 'fs'
+        if (!fs.exists) throw 'fail'
+      `,
+    }),
+    test(['in.js', '--outfile=node.js', '--format=esm'], {
+      'in.js': `
+        let fn = async () => {
+          let fs = await import('fs')
+          if (!fs.exists) throw 'fail'
+        }
+        export {fn as async}
+      `,
+    }, { async: true }),
+    test(['in.js', '--outfile=out.js', '--format=esm'], {
+      'in.js': `
+        export let foo = 'abc'
+        export default function() {
+          return 123
+        }
+      `,
+      'node.js': `
+        import * as out from './out.js'
+        if (out.foo !== 'abc' || out.default() !== 123) throw 'fail'
+      `,
+    }),
+
+    // ESM => CJS
+    test(['in.js', '--outfile=node.js', '--format=cjs'], {
+      'in.js': `
+        import {exists} from 'fs'
+        if (!exists) throw 'fail'
+      `,
+    }),
+    test(['in.js', '--outfile=node.js', '--format=cjs'], {
+      'in.js': `
+        import fs from 'fs'
+        if (!fs.exists) throw 'fail'
+      `,
+    }),
+    test(['in.js', '--outfile=node.js', '--format=cjs'], {
+      'in.js': `
+        import * as fs from 'fs'
+        if (!fs.exists) throw 'fail'
+      `,
+    }),
+    test(['in.js', '--outfile=node.js', '--format=cjs'], {
+      'in.js': `
+        let fn = async () => {
+          let fs = await import('fs')
+          if (!fs.exists) throw 'fail'
+        }
+        export {fn as async}
+      `,
+    }, { async: true }),
+    test(['in.js', '--outfile=out.js', '--format=cjs'], {
+      'in.js': `
+        export let foo = 'abc'
+        export default function() {
+          return 123
+        }
+      `,
+      'node.js': `
+        const out = require('./out.js')
+        if (out.foo !== 'abc' || out.default() !== 123) throw 'fail'
+      `,
+    }),
+
+    // ESM => IIFE
+    test(['in.js', '--outfile=node.js', '--format=iife'], {
+      'in.js': `
+        import {exists} from 'fs'
+        if (!exists) throw 'fail'
+      `,
+    }),
+    test(['in.js', '--outfile=node.js', '--format=iife'], {
+      'in.js': `
+        import fs from 'fs'
+        if (!fs.exists) throw 'fail'
+      `,
+    }),
+    test(['in.js', '--outfile=node.js', '--format=iife'], {
+      'in.js': `
+        import * as fs from 'fs'
+        if (!fs.exists) throw 'fail'
+      `,
+    }),
+    test(['in.js', '--outfile=out.js', '--format=iife', '--global-name=test'], {
+      'in.js': `
+        let fn = async () => {
+          let fs = await import('fs')
+          if (!fs.exists) throw 'fail'
+        }
+        export {fn as async}
+      `,
+      'node.js': `
+        const code = require('fs').readFileSync(__dirname + '/out.js', 'utf8')
+        const out = new Function('require', code + '; return test')(require)
+        exports.async = out.async
+      `,
+    }, { async: true }),
+    test(['in.js', '--outfile=out.js', '--format=iife', '--global-name=test'], {
+      'in.js': `
+        export let foo = 'abc'
+        export default function() {
+          return 123
+        }
+      `,
+      'node.js': `
+        const code = require('fs').readFileSync(__dirname + '/out.js', 'utf8')
+        const out = new Function(code + '; return test')()
+        if (out.foo !== 'abc' || out.default() !== 123) throw 'fail'
+      `,
+    }),
+
+    // JSON
+    test(['in.json', '--outfile=out.js', '--format=esm'], {
+      'in.json': `{"foo": 123}`,
+      'node.js': `
+        import def from './out.js'
+        import {foo} from './out.js'
+        if (foo !== 123 || def.foo !== 123) throw 'fail'
+      `,
+    }),
+    test(['in.json', '--outfile=out.js', '--format=cjs'], {
+      'in.json': `{"foo": 123}`,
+      'node.js': `
+        const out = require('./out.js')
+        if (out.foo !== 123) throw 'fail'
+      `,
+    }),
+    test(['in.json', '--outfile=out.js', '--format=iife', '--global-name=test'], {
+      'in.json': `{"foo": 123}`,
+      'node.js': `
+        const code = require('fs').readFileSync(__dirname + '/out.js', 'utf8')
+        const out = new Function(code + '; return test')()
+        if (out.foo !== 123) throw 'fail'
+      `,
+    }),
+
+    // CJS => CJS
+    test(['in.js', '--outfile=node.js', '--format=cjs'], {
+      'in.js': `
+        const {exists} = require('fs')
+        if (!exists) throw 'fail'
+      `,
+    }),
+    test(['in.js', '--outfile=node.js', '--format=cjs'], {
+      'in.js': `
+        const fs = require('fs')
+        if (!fs.exists) throw 'fail'
+      `,
+    }),
+    test(['in.js', '--outfile=out.js', '--format=cjs'], {
+      'in.js': `
+        module.exports = 123
+      `,
+      'node.js': `
+        const out = require('./out.js')
+        if (out !== 123) throw 'fail'
+      `,
+    }),
+    test(['in.js', '--outfile=out.js', '--format=cjs'], {
+      'in.js': `
+        exports.foo = 123
+      `,
+      'node.js': `
+        const out = require('./out.js')
+        if (out.foo !== 123) throw 'fail'
+      `,
+    }),
+
+    // CJS => IIFE
+    test(['in.js', '--outfile=out.js', '--format=iife'], {
+      'in.js': `
+        const {exists} = require('fs')
+        if (!exists) throw 'fail'
+      `,
+      'node.js': `
+        const code = require('fs').readFileSync(__dirname + '/out.js', 'utf8')
+        new Function('require', code)(require)
+      `,
+    }),
+    test(['in.js', '--outfile=out.js', '--format=iife'], {
+      'in.js': `
+        const fs = require('fs')
+        if (!fs.exists) throw 'fail'
+      `,
+      'node.js': `
+        const code = require('fs').readFileSync(__dirname + '/out.js', 'utf8')
+        new Function('require', code)(require)
+      `,
+    }),
+    test(['in.js', '--outfile=out.js', '--format=iife', '--global-name=test'], {
+      'in.js': `
+        module.exports = 123
+      `,
+      'node.js': `
+        const code = require('fs').readFileSync(__dirname + '/out.js', 'utf8')
+        const out = new Function(code + '; return test')()
+        if (out !== 123) throw 'fail'
+      `,
+    }),
+    test(['in.js', '--outfile=out.js', '--format=iife', '--global-name=test'], {
+      'in.js': `
+        exports.foo = 123
+      `,
+      'node.js': `
+        const code = require('fs').readFileSync(__dirname + '/out.js', 'utf8')
+        const out = new Function(code + '; return test')()
+        if (out.foo !== 123) throw 'fail'
+      `,
+    }),
+
+    // CJS => ESM
+    test(['in.js', '--outfile=out.js', '--format=esm'], {
+      'in.js': `
+        const {exists} = require('fs')
+        if (!exists) throw 'fail'
+      `,
+      'node.js': `
+        let fn = async () => {
+          let error
+          await import('./out.js').catch(x => error = x)
+          if (!error || error.message !== 'require is not defined') throw 'fail'
+        }
+        export {fn as async}
+      `,
+    }, {
+      async: true,
+      expectedStderr: ` > in.js: warning: Converting "require" to "esm" is currently not supported
+    2 │         const {exists} = require('fs')
+      ╵                          ~~~~~~~
+
+1 warning
+`,
+    }),
+    test(['in.js', '--outfile=out.js', '--format=esm'], {
+      'in.js': `
+        const fs = require('fs')
+        if (!fs.exists) throw 'fail'
+      `,
+      'node.js': `
+        let fn = async () => {
+          let error
+          await import('./out.js').catch(x => error = x)
+          if (!error || error.message !== 'require is not defined') throw 'fail'
+        }
+        export {fn as async}
+      `,
+    }, {
+      async: true,
+      expectedStderr: ` > in.js: warning: Converting "require" to "esm" is currently not supported
+    2 │         const fs = require('fs')
+      ╵                    ~~~~~~~
+
+1 warning
+`,
+    }),
+    test(['in.js', '--outfile=out.js', '--format=esm'], {
+      'in.js': `
+        module.exports = 123
+      `,
+      'node.js': `
+        import out from './out.js'
+        if (out !== 123) throw 'fail'
+      `,
+    }),
+    test(['in.js', '--outfile=out.js', '--format=esm'], {
+      'in.js': `
+        exports.foo = 123
+      `,
+      'node.js': `
+        import out from './out.js'
+        if (out.foo !== 123) throw 'fail'
+      `,
+    }),
+  )
+
+  // Tests for "eval" scope issues
+  tests.push(
+    test(['in.js', '--bundle', '--outfile=node.js', '--minify-syntax', '--minify-identifiers'], {
+      'in.js': `
+        import a from './a'
+        import b, {Button} from './b'
+        import c from './c'
+        if (a[0] !== a[1]) throw 'fail'
+        if (b !== Button) throw 'fail'
+        if (!(new c instanceof c)) throw 'fail'
+      `,
+      'a.js': `
+        class Button {}
+        export default [Button, eval('Button')]
+      `,
+      'b.js': `
+        export class Button {}
+        export default eval('Button')
+      `,
+      'c.js': `
+        class Button {}
+        export default eval('Button')
+      `,
+    }),
+  )
+
+  // Tests for "arguments" scope issues
+  tests.push(
+    test(['in.js', '--outfile=node.js', '--minify'], {
+      'in.js': `
+        function arguments() {
+          return arguments.length
+        }
+        if (arguments(0, 1) !== 2) throw 'fail'
+      `,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify'], {
+      'in.js': `
+        let value = (function arguments() {
+          return arguments.length
+        })(0, 1)
+        if (value !== 2) throw 'fail'
+      `,
+    }),
+  )
+
   // Tests for catch scope issues
   tests.push(
     test(['in.js', '--outfile=node.js', '--minify'], {
       'in.js': `
-      var x = 0, y = []
-      try {
-        throw 1
-      } catch (x) {
-        y.push(x)
-        var x = 2
-        y.push(x)
-      }
-      y.push(x)
-      if (y + '' !== '1,2,0') throw 'fail: ' + y
-    `,
-    }),
-    test(['in.js', '--outfile=node.js', '--minify'], {
-      'in.js': `
-      var x = 0, y = []
-      try {
-        throw 1
-      } catch (x) {
-        y.push(x)
-        var x = 2
-        y.push(x)
-      }
-      finally { x = 3 }
-      y.push(x)
-      if (y + '' !== '1,2,3') throw 'fail: ' + y
-    `,
-    }),
-    test(['in.js', '--outfile=node.js', '--minify'], {
-      'in.js': `
-      var y = []
-      try {
-        throw 1
-      } catch (x) {
-        y.push(x)
-        var x = 2
-        y.push(x)
-      }
-      y.push(x)
-      if (y + '' !== '1,2,') throw 'fail: ' + y
-    `,
-    }),
-    test(['in.js', '--outfile=node.js', '--minify'], {
-      'in.js': `
-      var y = []
-      try {
-        throw 1
-      } catch (x) {
-        y.push(x)
-        x = 2
-        y.push(x)
-      }
-      y.push(typeof x)
-      if (y + '' !== '1,2,undefined') throw 'fail: ' + y
-    `,
-    }),
-    test(['in.js', '--outfile=node.js', '--minify'], {
-      'in.js': `
-      var y = []
-      try {
-        throw 1
-      } catch (x) {
-        y.push(x)
+        var x = 0, y = []
         try {
-          throw 2
+          throw 1
         } catch (x) {
           y.push(x)
-          var x = 3
+          var x = 2
           y.push(x)
         }
         y.push(x)
-      }
-      y.push(x)
-      if (y + '' !== '1,2,3,1,') throw 'fail: ' + y
-    `,
+        if (y + '' !== '1,2,0') throw 'fail: ' + y
+      `,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify'], {
+      'in.js': `
+        var x = 0, y = []
+        try {
+          throw 1
+        } catch (x) {
+          y.push(x)
+          var x = 2
+          y.push(x)
+        }
+        finally { x = 3 }
+        y.push(x)
+        if (y + '' !== '1,2,3') throw 'fail: ' + y
+      `,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify'], {
+      'in.js': `
+        var y = []
+        try {
+          throw 1
+        } catch (x) {
+          y.push(x)
+          var x = 2
+          y.push(x)
+        }
+        y.push(x)
+        if (y + '' !== '1,2,') throw 'fail: ' + y
+      `,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify'], {
+      'in.js': `
+        var y = []
+        try {
+          throw 1
+        } catch (x) {
+          y.push(x)
+          x = 2
+          y.push(x)
+        }
+        y.push(typeof x)
+        if (y + '' !== '1,2,undefined') throw 'fail: ' + y
+      `,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify'], {
+      'in.js': `
+        var y = []
+        try {
+          throw 1
+        } catch (x) {
+          y.push(x)
+          try {
+            throw 2
+          } catch (x) {
+            y.push(x)
+            var x = 3
+            y.push(x)
+          }
+          y.push(x)
+        }
+        y.push(x)
+        if (y + '' !== '1,2,3,1,') throw 'fail: ' + y
+      `,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify'], {
+      'in.js': `
+        var y = []
+        try { x; y.push('fail') } catch (e) {}
+        try {
+          throw 1
+        } catch (x) {
+          y.push(x)
+        }
+        try { x; y.push('fail') } catch (e) {}
+        if (y + '' !== '1') throw 'fail: ' + y
+      `,
     }),
   )
 
@@ -368,6 +988,229 @@
     test(['in.js', '--outfile=node.js', '--minify', '--target=es6'], {
       // Importing the "__pow()" runtime function should not affect top-level name minification
       'in.js': `let _8 = 2 ** 3; function foo8() {} if (foo8.name !== 'foo' + _8) throw 'fail'`,
+    }),
+  )
+
+  // Test name preservation
+  tests.push(
+    // Arrow functions
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `(() => { let fn = () => {}; if (fn.name !== 'fn') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `(() => { let fn; fn = () => {}; if (fn.name !== 'fn') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `(() => { let [fn = () => {}] = []; if (fn.name !== 'fn') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `(() => { let fn; [fn = () => {}] = []; if (fn.name !== 'fn') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `(() => { let {fn = () => {}} = {}; if (fn.name !== 'fn') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `(() => { let {prop: fn = () => {}} = {}; if (fn.name !== 'fn') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `(() => { let fn; ({fn = () => {}} = {}); if (fn.name !== 'fn') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `(() => { let fn; ({prop: fn = () => {}} = {}); if (fn.name !== 'fn') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `import foo from './other'; if (foo.name !== 'default') throw 'fail'`,
+      'other.js': `export default () => {}`,
+    }),
+
+    // Functions
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `(() => { function foo() {} if (foo.name !== 'foo') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `(() => { let fn = function foo() {}; if (fn.name !== 'foo') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `(() => { let fn = function() {}; if (fn.name !== 'fn') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `(() => { let fn; fn = function() {}; if (fn.name !== 'fn') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `(() => { let [fn = function() {}] = []; if (fn.name !== 'fn') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `(() => { let fn; [fn = function() {}] = []; if (fn.name !== 'fn') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `(() => { let {fn = function() {}} = {}; if (fn.name !== 'fn') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `(() => { let {prop: fn = function() {}} = {}; if (fn.name !== 'fn') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `(() => { let fn; ({fn = function() {}} = {}); if (fn.name !== 'fn') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `(() => { let fn; ({prop: fn = function() {}} = {}); if (fn.name !== 'fn') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `import foo from './other'; if (foo.name !== 'foo') throw 'fail'`,
+      'other.js': `export default function foo() {}`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `import foo from './other'; if (foo.name !== 'default') throw 'fail'`,
+      'other.js': `export default function() {}`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `import foo from './other'; if (foo.name !== 'default') throw 'fail'`,
+      'other.js': `export default (function() {})`,
+    }),
+
+    // Classes
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `(() => { class foo {} if (foo.name !== 'foo') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `(() => { let cls = class foo {}; if (cls.name !== 'foo') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `(() => { let cls = class {}; if (cls.name !== 'cls') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `(() => { let cls; cls = class {}; if (cls.name !== 'cls') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `(() => { let [cls = class {}] = []; if (cls.name !== 'cls') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `(() => { let cls; [cls = class {}] = []; if (cls.name !== 'cls') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `(() => { let {cls = class {}} = {}; if (cls.name !== 'cls') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `(() => { let {prop: cls = class {}} = {}; if (cls.name !== 'cls') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `(() => { let cls; ({cls = class {}} = {}); if (cls.name !== 'cls') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `(() => { let cls; ({prop: cls = class {}} = {}); if (cls.name !== 'cls') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `import foo from './other'; if (foo.name !== 'foo') throw 'fail'`,
+      'other.js': `export default class foo {}`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `import foo from './other'; if (foo.name !== 'default') throw 'fail'`,
+      'other.js': `export default class {}`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle'], {
+      'in.js': `import foo from './other'; if (foo.name !== 'default') throw 'fail'`,
+      'other.js': `export default (class {})`,
+    }),
+    test(['in.js', '--outfile=out.js', '--minify', '--keep-names', '--format=esm'], {
+      'node.js': `import foo from './out.js'; if (foo.name !== 'foo') throw 'fail'`,
+      'in.js': `export default class foo {}`,
+    }),
+    test(['in.js', '--outfile=out.js', '--minify', '--keep-names', '--format=esm'], {
+      'node.js': `import foo from './out.js'; if (foo.name !== 'default') throw 'fail'`,
+      'in.js': `export default class {}`,
+    }),
+    test(['in.js', '--outfile=out.js', '--minify', '--keep-names', '--format=esm'], {
+      'node.js': `import foo from './out.js'; if (foo.name !== 'default') throw 'fail'`,
+      'in.js': `export default (class {})`,
+    }),
+
+    // Lowered classes
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle', '--target=es6'], {
+      'in.js': `(() => { class foo { a() { return this.#b } #b() {} } if (foo.name !== 'foo') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle', '--target=es6'], {
+      'in.js': `(() => { let cls = class foo { a() { return this.#b } #b() {} }; if (cls.name !== 'foo') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle', '--target=es6'], {
+      'in.js': `(() => { let cls = class { a() { return this.#b } #b() {} }; if (cls.name !== 'cls') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle', '--target=es6'], {
+      'in.js': `(() => { let cls; cls = class { a() { return this.#b } #b() {} }; if (cls.name !== 'cls') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle', '--target=es6'], {
+      'in.js': `(() => { let [cls = class { a() { return this.#b } #b() {} }] = []; if (cls.name !== 'cls') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle', '--target=es6'], {
+      'in.js': `(() => { let cls; [cls = class { a() { return this.#b } #b() {} }] = []; if (cls.name !== 'cls') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle', '--target=es6'], {
+      'in.js': `(() => { let {cls = class { a() { return this.#b } #b() {} }} = {}; if (cls.name !== 'cls') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle', '--target=es6'], {
+      'in.js': `(() => { let {prop: cls = class { a() { return this.#b } #b() {} }} = {}; if (cls.name !== 'cls') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle', '--target=es6'], {
+      'in.js': `(() => { let cls; ({cls = class { a() { return this.#b } #b() {} }} = {}); if (cls.name !== 'cls') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle', '--target=es6'], {
+      'in.js': `(() => { let cls; ({prop: cls = class { a() { return this.#b } #b() {} }} = {}); if (cls.name !== 'cls') throw 'fail' })()`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle', '--target=es6'], {
+      'in.js': `import foo from './other'; if (foo.name !== 'foo') throw 'fail'`,
+      'other.js': `export default class foo { a() { return this.#b } #b() {} }`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle', '--target=es6'], {
+      'in.js': `import foo from './other'; if (foo.name !== 'default') throw 'fail'`,
+      'other.js': `export default class { a() { return this.#b } #b() {} }`,
+    }),
+    test(['in.js', '--outfile=node.js', '--minify', '--keep-names', '--bundle', '--target=es6'], {
+      'in.js': `import foo from './other'; if (foo.name !== 'default') throw 'fail'`,
+      'other.js': `export default (class { a() { return this.#b } #b() {} })`,
+    }),
+    test(['in.js', '--outfile=out.js', '--minify', '--keep-names', '--format=esm', '--target=es6'], {
+      'node.js': `import foo from './out.js'; if (foo.name !== 'foo') throw 'fail'`,
+      'in.js': `export default class foo { a() { return this.#b } #b() {} }`,
+    }),
+    test(['in.js', '--outfile=out.js', '--minify', '--keep-names', '--format=esm', '--target=es6'], {
+      'node.js': `import foo from './out.js'; if (foo.name !== 'default') throw 'fail'`,
+      'in.js': `export default class { a() { return this.#b } #b() {} }`,
+    }),
+    test(['in.js', '--outfile=out.js', '--minify', '--keep-names', '--format=esm', '--target=es6'], {
+      'node.js': `import foo from './out.js'; if (foo.name !== 'default') throw 'fail'`,
+      'in.js': `export default (class { a() { return this.#b } #b() {} })`,
+    }),
+  )
+
+  // Test minification of hoisted top-level symbols declared in nested scopes.
+  // Previously this code was incorrectly transformed into this, which crashes:
+  //
+  //   var c = false;
+  //   var d = function a() {
+  //     b[a]();
+  //   };
+  //   for (var a = 0, b = [() => c = true]; a < b.length; a++) {
+  //     d();
+  //   }
+  //   export default c;
+  //
+  // The problem is that "var i" is declared in a nested scope but hoisted to
+  // the top-level scope. So it's accidentally assigned a nested scope slot
+  // even though it's a top-level symbol, not a nested scope symbol.
+  tests.push(
+    test(['in.js', '--outfile=out.js', '--format=esm', '--minify', '--bundle'], {
+      'in.js': `
+        var worked = false
+        var loop = function fn() {
+          array[i]();
+        };
+        for (var i = 0, array = [() => worked = true]; i < array.length; i++) {
+          loop();
+        }
+        export default worked
+      `,
+      'node.js': `
+        import worked from './out.js'
+        if (!worked) throw 'fail'
+      `,
     }),
   )
 
@@ -453,6 +1296,34 @@
     }),
   )
 
+  // Optional chain lowering tests
+  for (let [code, expected] of [
+    ['array?.map?.(x => -x).filter', '[].filter'],
+    ['array?.map?.(x => -x)["filter"]', '[].filter'],
+    ['array?.map?.(x => -x).filter(x => x < -1)', '[-2, -3]'],
+    ['array?.map?.(x => -x)["filter"](x => x < -1)', '[-2, -3]'],
+  ]) {
+    tests.push(
+      test(['in.js', '--outfile=node.js', '--target=es6', '--format=esm'], {
+        'in.js': `
+          import * as assert from 'assert';
+          let array = [1, 2, 3];
+          let result = ${code};
+          assert.deepStrictEqual(result, ${expected});
+        `,
+      }),
+      test(['in.js', '--outfile=node.js', '--target=es6', '--format=esm'], {
+        'in.js': `
+          import * as assert from 'assert';
+          function test(array, result = ${code}) {
+            return result
+          }
+          assert.deepStrictEqual(test([1, 2, 3]), ${expected});
+        `,
+      }),
+    )
+  }
+
   // Class lowering tests
   tests.push(
     test(['in.js', '--outfile=node.js', '--target=es6'], {
@@ -511,7 +1382,7 @@
           #foo
           #method() {}
           get #getter() {}
-          set #setter() {}
+          set #setter(x) {}
           bar() {
             let obj = {}
             expect(() => obj.#foo, 'Cannot read from private field')
@@ -527,28 +1398,166 @@
         }
         new Foo().bar()
       `,
+    }, {
+      expectedStderr: ` > in.js: warning: Reading from setter-only property "#setter" will throw
+    23 │             expect(() => this.#setter, 'member.get is not a function')
+       ╵                               ~~~~~~~
+
+ > in.js: warning: Writing to getter-only property "#getter" will throw
+    24 │             expect(() => this.#getter = 1, 'member.set is not a func...
+       ╵                               ~~~~~~~
+
+2 warnings
+`,
     }),
     test(['in.js', '--outfile=node.js', '--target=es6'], {
       'in.js': `
-        let called = false
+        let setterCalls = 0
         class Foo {
-          foo
-          set foo(x) { called = true }
+          key
+          set key(x) { setterCalls++ }
         }
-        new Foo()
-        if (!called) throw 'fail'
+        let foo = new Foo()
+        if (setterCalls !== 0 || !foo.hasOwnProperty('key') || foo.key !== void 0) throw 'fail'
       `,
     }),
-    test(['in.js', '--outfile=node.js', '--target=es6', '--strict'], {
+    test(['in.js', '--outfile=node.js', '--target=es6'], {
       'in.js': `
-        let called = false
+        let setterCalls = 0
         class Foo {
-          foo
-          set foo(x) { called = true }
+          key = 123
+          set key(x) { setterCalls++ }
         }
-        new Foo()
-        if (called) throw 'fail'
+        let foo = new Foo()
+        if (setterCalls !== 0 || !foo.hasOwnProperty('key') || foo.key !== 123) throw 'fail'
       `,
+    }),
+    test(['in.js', '--outfile=node.js', '--target=es6'], {
+      'in.js': `
+        let toStringCalls = 0
+        let setterCalls = 0
+        class Foo {
+          [{toString() {
+            toStringCalls++
+            return 'key'
+          }}]
+          set key(x) { setterCalls++ }
+        }
+        let foo = new Foo()
+        if (setterCalls !== 0 || toStringCalls !== 1 || !foo.hasOwnProperty('key') || foo.key !== void 0) throw 'fail'
+      `,
+    }),
+    test(['in.js', '--outfile=node.js', '--target=es6'], {
+      'in.js': `
+        let toStringCalls = 0
+        let setterCalls = 0
+        class Foo {
+          [{toString() {
+            toStringCalls++
+            return 'key'
+          }}] = 123
+          set key(x) { setterCalls++ }
+        }
+        let foo = new Foo()
+        if (setterCalls !== 0 || toStringCalls !== 1 || !foo.hasOwnProperty('key') || foo.key !== 123) throw 'fail'
+      `,
+    }),
+    test(['in.js', '--outfile=node.js', '--target=es6'], {
+      'in.js': `
+        let key = Symbol('key')
+        let setterCalls = 0
+        class Foo {
+          [key]
+          set [key](x) { setterCalls++ }
+        }
+        let foo = new Foo()
+        if (setterCalls !== 0 || !foo.hasOwnProperty(key) || foo[key] !== void 0) throw 'fail'
+      `,
+    }),
+    test(['in.js', '--outfile=node.js', '--target=es6'], {
+      'in.js': `
+        let key = Symbol('key')
+        let setterCalls = 0
+        class Foo {
+          [key] = 123
+          set [key](x) { setterCalls++ }
+        }
+        let foo = new Foo()
+        if (setterCalls !== 0 || !foo.hasOwnProperty(key) || foo[key] !== 123) throw 'fail'
+      `,
+    }),
+
+    // Test class re-assignment
+    test(['in.js', '--outfile=node.js', '--target=es6'], {
+      'in.js': `
+        class Foo {
+          static foo() { return this.#foo }
+          static #foo = Foo
+        }
+        let old = Foo
+        Foo = class Bar {}
+        if (old.foo() !== old) throw 'fail'
+      `,
+    }),
+    test(['in.js', '--outfile=node.js', '--target=es6'], {
+      'in.js': `
+        class Foo {
+          static foo() { return this.#foo() }
+          static #foo() { return Foo }
+        }
+        let old = Foo
+        Foo = class Bar {}
+        if (old.foo() !== old) throw 'fail'
+      `,
+    }),
+    test(['in.js', '--outfile=node.js', '--target=es6'], {
+      'in.js': `
+        try {
+          class Foo {
+            static foo() { return this.#foo }
+            static #foo = Foo = class Bar {}
+          }
+          throw 'fail'
+        } catch (e) {
+          if (!(e instanceof TypeError))
+            throw e
+        }
+      `,
+    }, {
+      expectedStderr: ` > in.js: warning: This assignment will throw because "Foo" is a constant
+    5 │             static #foo = Foo = class Bar {}
+      ╵                           ~~~
+     in.js: note: "Foo" was declared a constant here
+    3 │           class Foo {
+      ╵                 ~~~
+
+1 warning
+`,
+    }),
+    test(['in.js', '--outfile=node.js', '--target=es6'], {
+      'in.js': `
+        class Foo {
+          static foo() { return this.#foo() }
+          static #foo() { Foo = class Bar{} }
+        }
+        try {
+          Foo.foo()
+          throw 'fail'
+        } catch (e) {
+          if (!(e instanceof TypeError))
+            throw e
+        }
+      `,
+    }, {
+      expectedStderr: ` > in.js: warning: This assignment will throw because "Foo" is a constant
+    4 │           static #foo() { Foo = class Bar{} }
+      ╵                           ~~~
+     in.js: note: "Foo" was declared a constant here
+    2 │         class Foo {
+      ╵               ~~~
+
+1 warning
+`,
     }),
   )
 
@@ -597,6 +1606,209 @@
           }
           let [t, a] = await foo.call(0, 1, 2, 3)
           if (t !== 0 || a.length !== 3 || a[0] !== 1 || a[1] !== 2 || a[2] !== 3) throw 'fail'
+        }
+      `,
+    }, { async: true }),
+    test(['in.js', '--outfile=node.js', '--target=es6'], {
+      'in.js': `
+        let couldThrow = () => 'b'
+        exports.async = async () => {
+          "use strict"
+          async function f0() {
+            let bar = async (x, y) => [x, y, this, arguments]
+            return await bar('a', 'b')
+          }
+          async function f1() {
+            let bar = async (x, ...y) => [x, y[0], this, arguments]
+            return await bar('a', 'b')
+          }
+          async function f2() {
+            let bar = async (x, y = 'b') => [x, y, this, arguments]
+            return await bar('a')
+          }
+          async function f3() {
+            let bar = async (x, y = couldThrow()) => [x, y, this, arguments]
+            return await bar('a')
+          }
+          async function f4() {
+            let bar = async (x, y = couldThrow()) => (() => [x, y, this, arguments])()
+            return await bar('a')
+          }
+          async function f5() {
+            let bar = () => async (x, y = couldThrow()) => [x, y, this, arguments]
+            return await bar()('a')
+          }
+          async function f6() {
+            let bar = async () => async (x, y = couldThrow()) => [x, y, this, arguments]
+            return await (await bar())('a')
+          }
+          for (let foo of [f0, f1, f2, f3, f4, f5, f6]) {
+            let [x, y, t, a] = await foo.call(0, 1, 2, 3)
+            if (x !== 'a' || y !== 'b' || t !== 0 || a.length !== 3 || a[0] !== 1 || a[1] !== 2 || a[2] !== 3) throw 'fail'
+          }
+        }
+      `,
+    }, { async: true }),
+    test(['in.js', '--outfile=node.js', '--target=es6'], {
+      // The async transform must not change the argument count
+      'in.js': `
+        async function a(x, y) {}
+        if (a.length !== 2) throw 'fail: a'
+
+        async function b(x, y = x(), z) {}
+        if (b.length !== 1) throw 'fail: b'
+
+        async function c(x, y, ...z) {}
+        if (c.length !== 2) throw 'fail: c'
+
+        let d = async function(x, y) {}
+        if (d.length !== 2) throw 'fail: d'
+
+        let e = async function(x, y = x(), z) {}
+        if (e.length !== 1) throw 'fail: e'
+
+        let f = async function(x, y, ...z) {}
+        if (f.length !== 2) throw 'fail: f'
+
+        let g = async (x, y) => {}
+        if (g.length !== 2) throw 'fail: g'
+
+        let h = async (x, y = x(), z) => {}
+        if (h.length !== 1) throw 'fail: h'
+
+        let i = async (x, y, ...z) => {}
+        if (i.length !== 2) throw 'fail: i'
+      `,
+    }),
+    test(['in.js', '--outfile=node.js', '--target=es6'], {
+      // Functions must be able to access default arguments past the last non-default argument
+      'in.js': `
+        exports.async = async () => {
+          async function a(x, y = 0) { return y }
+          let b = async function(x, y = 0) { return y }
+          let c = async (x, y = 0) => y
+          for (let fn of [a, b, c]) {
+            if ((await fn('x', 'y')) !== 'y') throw 'fail: ' + fn
+          }
+        }
+      `,
+    }, { async: true }),
+    test(['in.js', '--outfile=node.js', '--target=es6'], {
+      // Functions must be able to access arguments past the argument count using "arguments"
+      'in.js': `
+        exports.async = async () => {
+          async function a() { return arguments[2] }
+          async function b(x, y) { return arguments[2] }
+          async function c(x, y = x) { return arguments[2] }
+          let d = async function() { return arguments[2] }
+          let e = async function(x, y) { return arguments[2] }
+          let f = async function(x, y = x) { return arguments[2] }
+          for (let fn of [a, b, c, d, e, f]) {
+            if ((await fn('x', 'y', 'z')) !== 'z') throw 'fail: ' + fn
+          }
+        }
+      `,
+    }, { async: true }),
+    test(['in.js', '--outfile=node.js', '--target=es6'], {
+      // Functions must be able to access arguments past the argument count using a rest argument
+      'in.js': `
+        exports.async = async () => {
+          async function a(...rest) { return rest[3] }
+          async function b(x, y, ...rest) { return rest[1] }
+          async function c(x, y = x, ...rest) { return rest[1] }
+          let d = async function(...rest) { return rest[3] }
+          let e = async function(x, y, ...rest) { return rest[1] }
+          let f = async function(x, y = x, ...rest) { return rest[1] }
+          let g = async (...rest) => rest[3]
+          let h = async (x, y, ...rest) => rest[1]
+          let i = async (x, y = x, ...rest) => rest[1]
+          for (let fn of [a, b, c, d, e, f, g, h, i]) {
+            if ((await fn(11, 22, 33, 44)) !== 44) throw 'fail: ' + fn
+          }
+        }
+      `,
+    }, { async: true }),
+    test(['in.js', '--outfile=node.js', '--target=es6'], {
+      // Functions must be able to modify arguments using "arguments"
+      'in.js': `
+        exports.async = async () => {
+          async function a(x) { let y = [x, arguments[0]]; arguments[0] = 'y'; return y.concat(x, arguments[0]) }
+          let b = async function(x) { let y = [x, arguments[0]]; arguments[0] = 'y'; return y.concat(x, arguments[0]) }
+          for (let fn of [a, b]) {
+            let values = (await fn('x')) + ''
+            if (values !== 'x,x,y,y') throw 'fail: ' + values
+          }
+        }
+      `,
+    }, { async: true }),
+    test(['in.js', '--outfile=node.js', '--target=es6'], {
+      // Errors in the evaluation of async function arguments should reject the resulting promise
+      'in.js': `
+        exports.async = async () => {
+          let expected = new Error('You should never see this error')
+          let throws = () => { throw expected }
+          async function a(x, y = throws()) {}
+          async function b({ [throws()]: x }) {}
+          let c = async function (x, y = throws()) {}
+          let d = async function ({ [throws()]: x }) {}
+          let e = async (x, y = throws()) => {}
+          let f = async ({ [throws()]: x }) => {}
+          for (let fn of [a, b, c, d, e, f]) {
+            let promise = fn({})
+            try {
+              await promise
+            } catch (e) {
+              if (e === expected) continue
+            }
+            throw 'fail: ' + fn
+          }
+        }
+      `,
+    }, { async: true }),
+    test(['in.js', '--outfile=node.js', '--target=es6'], {
+      // Functions handle "super" property accesses
+      'in.js': `
+        exports.async = async () => {
+          class Base {
+            foo(x, y) {
+              return x + y
+            }
+          }
+          class Derived extends Base {
+            async test(key) {
+              return [
+                await super.foo,
+                await super[key],
+
+                await super.foo.name,
+                await super[key].name,
+                await super.foo?.name,
+                await super[key]?.name,
+                await super._foo?.name,
+                await super['_' + key]?.name,
+
+                await super.foo(1, 2),
+                await super[key](1, 2),
+                await super.foo?.(1, 2),
+                await super[key]?.(1, 2),
+                await super._foo?.(1, 2),
+                await super['_' + key]?.(1, 2),
+              ]
+            }
+          }
+          let d = new Derived
+          let observed = await d.test('foo')
+          let expected = [
+            d.foo, d.foo,
+            d.foo.name, d.foo.name, d.foo.name, d.foo.name, void 0, void 0,
+            3, 3, 3, 3, void 0, void 0,
+          ]
+          for (let i = 0; i < expected.length; i++) {
+            if (observed[i] !== expected[i]) {
+              console.log(i, observed[i], expected[i])
+              throw 'fail'
+            }
+          }
         }
       `,
     }, { async: true }),
@@ -737,6 +1949,98 @@
     )
   }
 
+  // Test file handle errors other than ENOENT
+  {
+    const errorText = process.platform === 'win32' ? 'The handle is invalid.' : 'is a directory';
+    tests.push(
+      test(['src/entry.js', '--bundle', '--outfile=node.js', '--sourcemap'], {
+        'src/entry.js': `
+        //# sourceMappingURL=entry.js.map
+      `,
+        'src/entry.js.map/x': ``,
+      }, {
+        expectedStderr: ` > src/entry.js: error: Cannot read file "src/entry.js.map": ${errorText}
+    2 │         //# sourceMappingURL=entry.js.map
+      ╵                              ~~~~~~~~~~~~
+
+1 error
+`,
+      }),
+      test(['src/entry.js', '--bundle', '--outfile=node.js'], {
+        'src/entry.js': ``,
+        'src/tsconfig.json': `{"extends": "./base.json"}`,
+        'src/base.json/x': ``,
+      }, {
+        expectedStderr: ` > src/tsconfig.json: error: Cannot read file "src/base.json": ${errorText}
+    1 │ {"extends": "./base.json"}
+      ╵             ~~~~~~~~~~~~~
+
+1 error
+`,
+      }),
+      test(['src/entry.js', '--bundle', '--outfile=node.js'], {
+        'src/entry.js': ``,
+        'src/tsconfig.json': `{"extends": "foo"}`,
+        'node_modules/foo/tsconfig.json/x': ``,
+      }, {
+        expectedStderr: ` > src/tsconfig.json: error: Cannot read file "node_modules/foo/tsconfig.json": ${errorText}
+    1 │ {"extends": "foo"}
+      ╵             ~~~~~
+
+1 error
+`,
+      }),
+      test(['src/entry.js', '--bundle', '--outfile=node.js'], {
+        'src/entry.js': ``,
+
+        // These missing directories shouldn't cause any errors on Windows
+        'package.json': `{
+          "main": "dist/cjs/index.js",
+          "module": "dist/esm/index.js"
+        }`,
+      }),
+    )
+  }
+
+  // Test a special-case error message for people trying to use "'--" on Windows
+  tests.push(
+    test(['in.js', `'--define:process.env.NODE_ENV="production"'`], {
+      'in.js': ``,
+    }, {
+      expectedStderr: ` > error: Unexpected single quote character before flag (use \\" to ` +
+        `escape double quotes): '--define:process.env.NODE_ENV="production"'
+
+1 error
+`,
+    }),
+  )
+
+  // Test injecting banner and footer
+  tests.push(
+    test(['in.js', '--outfile=node.js', '--banner=const bannerDefined = true;'], {
+      'in.js': `if (!bannerDefined) throw 'fail'`
+    }),
+    test(['in.js', '--outfile=node.js', '--footer=function footer() { }'], {
+      'in.js': `footer()`
+    }),
+    test(['a.js', 'b.js', '--outdir=out', '--bundle', '--format=cjs', '--banner=const bannerDefined = true;', '--footer=function footer() { }'], {
+      'a.js': `
+        module.exports = { banner: bannerDefined, footer };
+      `,
+      'b.js': `
+        module.exports = { banner: bannerDefined, footer };
+      `,
+      'node.js': `
+        const a = require('./out/a');
+        const b = require('./out/b');
+
+        if (!a.banner || !b.banner) throw 'fail';
+        a.footer();
+        b.footer();
+      `
+    }),
+  )
+
   // Test writing to stdout
   tests.push(
     // These should succeed
@@ -787,9 +2091,11 @@
   function test(args, files, options) {
     return async () => {
       const hasBundle = args.includes('--bundle')
+      const hasIIFE = args.includes('--format=iife')
       const hasCJS = args.includes('--format=cjs')
       const hasESM = args.includes('--format=esm')
-      const formats = hasCJS || !hasBundle ? ['cjs'] : hasESM ? ['esm'] : ['cjs', 'esm']
+      const formats = hasIIFE ? ['iife'] : hasESM ? ['esm'] : hasCJS || !hasBundle ? ['cjs'] : ['cjs', 'esm']
+      const expectedStderr = options && options.expectedStderr || '';
 
       // If the test doesn't specify a format, test both formats
       for (const format of formats) {
@@ -802,16 +2108,17 @@
           for (const file in files) {
             const filePath = path.join(thisTestDir, file)
             const contents = files[file]
-            mkdirp.sync(path.dirname(filePath))
+            await fs.mkdir(path.dirname(filePath), { recursive: true })
 
             // Optionally symlink the file if the test requests it
-            if (contents.symlink) await symlinkAsync(contents.symlink.replace('TEST_DIR_ABS_PATH', thisTestDir), filePath)
-            else await writeFileAsync(filePath, contents)
+            if (contents.symlink) await fs.symlink(contents.symlink.replace('TEST_DIR_ABS_PATH', thisTestDir), filePath)
+            else await fs.writeFile(filePath, contents)
           }
 
           // Run esbuild
-          await execFileAsync(esbuildPath, modifiedArgs,
+          const { stderr } = await execFileAsync(esbuildPath, modifiedArgs,
             { cwd: thisTestDir, stdio: 'pipe' })
+          assert.strictEqual(stderr, expectedStderr);
 
           // Run the resulting node.js file and make sure it exits cleanly. The
           // use of "pathToFileURL" is a workaround for a problem where node
@@ -821,12 +2128,13 @@
           let testExports
           switch (format) {
             case 'cjs':
-              await writeFileAsync(path.join(thisTestDir, 'package.json'), '{"type": "commonjs"}')
+            case 'iife':
+              await fs.writeFile(path.join(thisTestDir, 'package.json'), '{"type": "commonjs"}')
               testExports = (await import(url.pathToFileURL(`${nodePath}.js`))).default
               break
 
             case 'esm':
-              await writeFileAsync(path.join(thisTestDir, 'package.json'), '{"type": "module"}')
+              await fs.writeFile(path.join(thisTestDir, 'package.json'), '{"type": "module"}')
               testExports = await import(url.pathToFileURL(`${nodePath}.js`))
               break
           }
@@ -839,10 +2147,21 @@
           }
 
           // Clean up test output
-          rimraf.sync(thisTestDir, { disableGlob: true })
+          rimraf.sync(thisTestDir, { disableGlob: true });
         }
 
         catch (e) {
+          if (e && e.stderr !== void 0) {
+            try {
+              assert.strictEqual(e.stderr, expectedStderr);
+
+              // Clean up test output
+              rimraf.sync(thisTestDir, { disableGlob: true });
+              continue;
+            } catch (e2) {
+              e = e2;
+            }
+          }
           console.error(`❌ test failed: ${e && e.message || e}
   dir: ${path.relative(dirname, thisTestDir)}
   args: ${modifiedArgs.join(' ')}
@@ -862,9 +2181,9 @@
       const thisTestDir = path.join(testDir, '' + testCount++)
 
       try {
-        mkdirp.sync(thisTestDir)
+        await fs.mkdir(thisTestDir, { recursive: true })
         const inputFile = path.join(thisTestDir, 'example.js')
-        await writeFileAsync(inputFile, input)
+        await fs.writeFile(inputFile, input)
 
         // Run whatever check the caller is doing
         await callback(async () => {
@@ -887,7 +2206,7 @@
 
   // Create a fresh test directory
   rimraf.sync(testDir, { disableGlob: true })
-  fs.mkdirSync(testDir)
+  await fs.mkdir(testDir, { recursive: true })
 
   // Run all tests concurrently
   const allTestsPassed = (await Promise.all(tests.map(test => test()))).every(success => success)

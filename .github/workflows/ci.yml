@@ -20,11 +20,11 @@ jobs:
     - name: Set up Go 1.x
       uses: actions/setup-go@v2
       with:
-        go-version: ^1.13
+        go-version: ^1.15
       id: go
 
     - name: Setup Node.js environment
-      uses: actions/setup-node@v1.4.2
+      uses: actions/setup-node@v1.4.4
       with:
         node-version: 12
 
@@ -36,6 +36,10 @@ jobs:
 
     - name: go vet
       run: go vet ./cmd/... ./internal/... ./pkg/...
+
+    - name: go fmt
+      if: matrix.os == 'macos-latest'
+      run: make fmt-go && git diff-index --quiet HEAD --
 
     - name: npm ci
       run: cd scripts && npm ci
@@ -49,6 +53,25 @@ jobs:
     - name: JS API Tests
       run: node scripts/js-api-tests.js
 
+    - name: Plugin Tests
+      run: node scripts/plugin-tests.js
+
+    - name: TypeScript Type Definition Tests
+      if: matrix.os == 'ubuntu-latest'
+      run: node scripts/ts-type-tests.js
+
+    - name: JS API Type Check
+      if: matrix.os == 'ubuntu-latest'
+      run: make lib-typecheck
+
+    - name: WebAssembly API Tests (browser)
+      if: matrix.os == 'ubuntu-latest'
+      run: make test-wasm-browser
+
+    - name: WebAssembly API Tests (node)
+      if: matrix.os == 'ubuntu-latest'
+      run: make test-wasm-node
+
     - name: Sucrase Tests
       if: matrix.os == 'ubuntu-latest'
       run: make test-sucrase
@@ -60,3 +83,7 @@ jobs:
     - name: Preact Splitting Tests
       if: matrix.os == 'ubuntu-latest'
       run: make test-preact-splitting
+
+    - name: Uglify Tests
+      if: matrix.os == 'ubuntu-latest'
+      run: make uglify

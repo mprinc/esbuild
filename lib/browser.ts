@@ -1,28 +1,40 @@
 import * as types from "./types"
 import * as common from "./common"
 
+declare const ESBUILD_VERSION: string;
 declare let WEB_WORKER_SOURCE_CODE: string
 
-let build: typeof types.build = options => {
+export let version = ESBUILD_VERSION;
+
+export const build: typeof types.build = () => {
   throw new Error(`The "build" API only works in node`);
 };
 
-let transform: typeof types.transform = (input, options) => {
+export const serve: typeof types.serve = () => {
+  throw new Error(`The "serve" API only works in node`);
+};
+
+export const transform: typeof types.transform = () => {
   throw new Error(`The "transform" API only works in node`);
 };
 
-let buildSync: typeof types.buildSync = options => {
+export const buildSync: typeof types.buildSync = () => {
   throw new Error(`The "buildSync" API only works in node`);
 };
 
-let transformSync: typeof types.transformSync = (input, options) => {
+export const transformSync: typeof types.transformSync = () => {
   throw new Error(`The "transformSync" API only works in node`);
 };
 
-let startService: typeof types.startService = options => {
+export const startService: typeof types.startService = options => {
   if (!options) throw new Error('Must provide an options object to "startService"');
-  if (!options.wasmURL) throw new Error('Must provide the "wasmURL" option');
-  return fetch(options.wasmURL).then(r => r.arrayBuffer()).then(wasm => {
+  let wasmURL = options.wasmURL;
+  if (!wasmURL) throw new Error('Must provide the "wasmURL" option');
+  wasmURL += '';
+  return fetch(wasmURL).then(res => {
+    if (!res.ok) throw new Error(`Failed to download ${JSON.stringify(wasmURL)}`);
+    return res.arrayBuffer();
+  }).then(wasm => {
     let code = `{` +
       `let global={};` +
       `for(let o=self;o;o=Object.getPrototypeOf(o))` +
@@ -59,18 +71,24 @@ let startService: typeof types.startService = options => {
       writeToStdin(bytes) {
         worker.postMessage(bytes)
       },
+      isSync: false,
+      isBrowser: true,
     })
 
     return {
-      build(options) {
-        throw new Error(`The "build" API only works in node`)
-      },
+      build: (options: types.BuildOptions): Promise<any> =>
+        new Promise<types.BuildResult>((resolve, reject) =>
+          service.buildOrServe(null, options, false, (err, res) =>
+            err ? reject(err) : resolve(res as types.BuildResult))),
       transform: (input, options) =>
         new Promise((resolve, reject) =>
           service.transform(input, options || {}, false, {
             readFile(_, callback) { callback(new Error('Internal error'), null); },
             writeFile(_, callback) { callback(null); },
           }, (err, res) => err ? reject(err) : resolve(res!))),
+      serve() {
+        throw new Error(`The "serve" API only works in node`)
+      },
       stop() {
         worker.terminate()
         afterClose()
@@ -78,13 +96,3 @@ let startService: typeof types.startService = options => {
     }
   })
 }
-
-let api: typeof types = {
-  build,
-  buildSync,
-  transform,
-  transformSync,
-  startService,
-};
-
-module.exports = api;

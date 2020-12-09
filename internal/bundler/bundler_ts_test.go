@@ -6,8 +6,12 @@ import (
 	"github.com/evanw/esbuild/internal/config"
 )
 
+var ts_suite = suite{
+	name: "ts",
+}
+
 func TestTSDeclareConst(t *testing.T) {
-	expectBundled(t, bundled{
+	ts_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.ts": `
 				declare const require: any
@@ -20,19 +24,14 @@ func TestTSDeclareConst(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.ts"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /entry.ts
-let foo = bar();
-`,
 		},
 	})
 }
 
 func TestTSDeclareLet(t *testing.T) {
-	expectBundled(t, bundled{
+	ts_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.ts": `
 				declare let require: any
@@ -45,19 +44,14 @@ func TestTSDeclareLet(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.ts"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /entry.ts
-let foo = bar();
-`,
 		},
 	})
 }
 
 func TestTSDeclareVar(t *testing.T) {
-	expectBundled(t, bundled{
+	ts_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.ts": `
 				declare var require: any
@@ -70,19 +64,14 @@ func TestTSDeclareVar(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.ts"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /entry.ts
-let foo = bar();
-`,
 		},
 	})
 }
 
 func TestTSDeclareClass(t *testing.T) {
-	expectBundled(t, bundled{
+	ts_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.ts": `
 				declare class require {}
@@ -95,19 +84,14 @@ func TestTSDeclareClass(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.ts"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /entry.ts
-let foo = bar();
-`,
 		},
 	})
 }
 
 func TestTSDeclareFunction(t *testing.T) {
-	expectBundled(t, bundled{
+	ts_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.ts": `
 				declare function require(): void
@@ -120,19 +104,14 @@ func TestTSDeclareFunction(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.ts"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /entry.ts
-let foo = bar();
-`,
 		},
 	})
 }
 
 func TestTSDeclareNamespace(t *testing.T) {
-	expectBundled(t, bundled{
+	ts_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.ts": `
 				declare namespace require {}
@@ -145,19 +124,14 @@ func TestTSDeclareNamespace(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.ts"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /entry.ts
-let foo = bar();
-`,
 		},
 	})
 }
 
 func TestTSDeclareEnum(t *testing.T) {
-	expectBundled(t, bundled{
+	ts_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.ts": `
 				declare enum require {}
@@ -170,19 +144,14 @@ func TestTSDeclareEnum(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.ts"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /entry.ts
-let foo = bar();
-`,
 		},
 	})
 }
 
 func TestTSDeclareConstEnum(t *testing.T) {
-	expectBundled(t, bundled{
+	ts_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.ts": `
 				declare const enum require {}
@@ -195,19 +164,14 @@ func TestTSDeclareConstEnum(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.ts"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /entry.ts
-let foo = bar();
-`,
 		},
 	})
 }
 
 func TestTSImportEmptyNamespace(t *testing.T) {
-	expectBundled(t, bundled{
+	ts_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.ts": `
 				import {ns} from './ns.ts'
@@ -220,21 +184,14 @@ func TestTSImportEmptyNamespace(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.ts"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /entry.ts
-function foo() {
-}
-foo();
-`,
 		},
 	})
 }
 
 func TestTSImportMissingES6(t *testing.T) {
-	expectBundled(t, bundled{
+	ts_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.ts": `
 				import fn, {x as a, y as b} from './foo'
@@ -246,17 +203,17 @@ func TestTSImportMissingES6(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.ts"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
 		},
-		expectedCompileLog: `/entry.ts: error: No matching export for import "default"
-/entry.ts: error: No matching export for import "y"
+		expectedCompileLog: `entry.ts: error: No matching export for import "default"
+entry.ts: error: No matching export for import "y"
 `,
 	})
 }
 
 func TestTSImportMissingUnusedES6(t *testing.T) {
-	expectBundled(t, bundled{
+	ts_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.ts": `
 				import fn, {x as a, y as b} from './foo'
@@ -267,17 +224,14 @@ func TestTSImportMissingUnusedES6(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.ts"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": ``,
 		},
 	})
 }
 
 func TestTSExportMissingES6(t *testing.T) {
-	expectBundled(t, bundled{
+	ts_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.js": `
 				import * as ns from './foo'
@@ -292,25 +246,15 @@ func TestTSExportMissingES6(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /bar.js
-
-// /foo.ts
-const foo_exports = {};
-
-// /entry.js
-console.log(foo_exports);
-`,
 		},
 	})
 }
 
 // It's an error to import from a file that does not exist
 func TestTSImportMissingFile(t *testing.T) {
-	expectBundled(t, bundled{
+	ts_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.ts": `
 				import {Something} from './doesNotExist.ts'
@@ -319,16 +263,17 @@ func TestTSImportMissingFile(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.ts"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
 		},
-		expectedScanLog: "/entry.ts: error: Could not resolve \"./doesNotExist.ts\"\n",
+		expectedScanLog: `entry.ts: error: Could not resolve "./doesNotExist.ts"
+`,
 	})
 }
 
 // It's not an error to import a type from a file that does not exist
 func TestTSImportTypeOnlyFile(t *testing.T) {
-	expectBundled(t, bundled{
+	ts_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.ts": `
 				import {SomeType1} from './doesNotExist1.ts'
@@ -338,19 +283,14 @@ func TestTSImportTypeOnlyFile(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.ts"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /entry.ts
-let foo = bar();
-`,
 		},
 	})
 }
 
 func TestTSExportEquals(t *testing.T) {
-	expectBundled(t, bundled{
+	ts_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/a.ts": `
 				import b from './b.ts'
@@ -363,27 +303,14 @@ func TestTSExportEquals(t *testing.T) {
 		},
 		entryPaths: []string{"/a.ts"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /b.ts
-var require_b = __commonJS((exports, module) => {
-  function foo() {
-  }
-  module.exports = [123, foo];
-});
-
-// /a.ts
-const b = __toModule(require_b());
-console.log(b.default);
-`,
 		},
 	})
 }
 
 func TestTSExportNamespace(t *testing.T) {
-	expectBundled(t, bundled{
+	ts_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/a.ts": `
 				import {Foo} from './b.ts'
@@ -401,29 +328,14 @@ func TestTSExportNamespace(t *testing.T) {
 		},
 		entryPaths: []string{"/a.ts"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /b.ts
-class Foo {
-}
-(function(Foo2) {
-  Foo2.foo = 1;
-})(Foo || (Foo = {}));
-(function(Foo2) {
-  Foo2.bar = 2;
-})(Foo || (Foo = {}));
-
-// /a.ts
-console.log(new Foo());
-`,
 		},
 	})
 }
 
 func TestTSMinifyEnum(t *testing.T) {
-	expectBundled(t, bundled{
+	ts_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/a.ts": `
 				enum Foo { A, B, C = Foo }
@@ -439,15 +351,11 @@ func TestTSMinifyEnum(t *testing.T) {
 			MinifyIdentifiers: true,
 			AbsOutputDir:      "/",
 		},
-		expected: map[string]string{
-			"/a.js": "var Foo;(function(a){a[a.A=0]=\"A\",a[a.B=1]=\"B\",a[a.C=a]=\"C\"})(Foo||(Foo={}));\n",
-			"/b.js": "export var Foo;(function(a){a[a.X=0]=\"X\",a[a.Y=1]=\"Y\",a[a.Z=a]=\"Z\"})(Foo||(Foo={}));\n",
-		},
 	})
 }
 
 func TestTSMinifyNamespace(t *testing.T) {
-	expectBundled(t, bundled{
+	ts_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/a.ts": `
 				namespace Foo {
@@ -471,15 +379,11 @@ func TestTSMinifyNamespace(t *testing.T) {
 			MinifyIdentifiers: true,
 			AbsOutputDir:      "/",
 		},
-		expected: map[string]string{
-			"/a.js": "var Foo;(function(a){let b;(function(c){foo(a,c)})(b=a.Bar||(a.Bar={}))})(Foo||(Foo={}));\n",
-			"/b.js": "export var Foo;(function(a){let b;(function(c){foo(a,c)})(b=a.Bar||(a.Bar={}))})(Foo||(Foo={}));\n",
-		},
 	})
 }
 
 func TestTSMinifyDerivedClass(t *testing.T) {
-	expectBundled(t, bundled{
+	ts_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.ts": `
 				class Foo extends Bar {
@@ -495,26 +399,15 @@ func TestTSMinifyDerivedClass(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.ts"},
 		options: config.Options{
-			MangleSyntax:        true,
-			UnsupportedFeatures: es(2015),
-			AbsOutputFile:       "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `class Foo extends Bar {
-  constructor() {
-    super();
-    this.foo = 1;
-    this.bar = 2;
-    foo(), bar();
-  }
-}
-`,
+			MangleSyntax:          true,
+			UnsupportedJSFeatures: es(2015),
+			AbsOutputFile:         "/out.js",
 		},
 	})
 }
 
 func TestTSImportVsLocalCollisionAllTypes(t *testing.T) {
-	expectBundled(t, bundled{
+	ts_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.ts": `
 				import {a, b, c, d, e} from './other.ts'
@@ -530,26 +423,14 @@ func TestTSImportVsLocalCollisionAllTypes(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.ts"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /entry.ts
-let a;
-const b = 0;
-var c;
-function d() {
-}
-class e {
-}
-console.log(a, b, c, d, e);
-`,
 		},
 	})
 }
 
 func TestTSImportVsLocalCollisionMixed(t *testing.T) {
-	expectBundled(t, bundled{
+	ts_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.ts": `
 				import {a, b, c, d, e, real} from './other.ts'
@@ -566,29 +447,14 @@ func TestTSImportVsLocalCollisionMixed(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.ts"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
-		},
-		expected: map[string]string{
-			"/out.js": `// /other.ts
-let real = 123;
-
-// /entry.ts
-let a;
-const b = 0;
-var c;
-function d() {
-}
-class e {
-}
-console.log(a, b, c, d, e, real);
-`,
 		},
 	})
 }
 
 func TestTSMinifiedBundleES6(t *testing.T) {
-	expectBundled(t, bundled{
+	ts_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.ts": `
 				import {foo} from './a'
@@ -602,21 +468,17 @@ func TestTSMinifiedBundleES6(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.ts"},
 		options: config.Options{
-			IsBundling:        true,
+			Mode:              config.ModeBundle,
 			MangleSyntax:      true,
 			RemoveWhitespace:  true,
 			MinifyIdentifiers: true,
 			AbsOutputFile:     "/out.js",
 		},
-		expected: map[string]string{
-			"/out.js": `function a(){return 123}console.log(a());
-`,
-		},
 	})
 }
 
 func TestTSMinifiedBundleCommonJS(t *testing.T) {
-	expectBundled(t, bundled{
+	ts_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.ts": `
 				const {foo} = require('./a')
@@ -633,21 +495,17 @@ func TestTSMinifiedBundleCommonJS(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.ts"},
 		options: config.Options{
-			IsBundling:        true,
+			Mode:              config.ModeBundle,
 			MangleSyntax:      true,
 			RemoveWhitespace:  true,
 			MinifyIdentifiers: true,
 			AbsOutputFile:     "/out.js",
 		},
-		expected: map[string]string{
-			"/out.js": `var c=e(b=>{b.foo=function(){return 123}});var d=e((b,a)=>{a.exports={test:!0}});const{foo:f}=c();console.log(f(),d());
-`,
-		},
 	})
 }
 
 func TestTypeScriptDecorators(t *testing.T) {
-	expectBundled(t, bundled{
+	ts_suite.expectBundled(t, bundled{
 		files: map[string]string{
 			"/entry.js": `
 				import all from './all'
@@ -769,241 +627,246 @@ func TestTypeScriptDecorators(t *testing.T) {
 		},
 		entryPaths: []string{"/entry.js"},
 		options: config.Options{
-			IsBundling:    true,
+			Mode:          config.ModeBundle,
 			AbsOutputFile: "/out.js",
 		},
-		expected: map[string]string{
-			"/out.js": `// /all.ts
-let Foo = class {
-  constructor() {
-    this.mDef = 1;
-  }
-  method(arg0, arg1) {
-    return new Foo();
-  }
-  static sMethod(arg0, arg1) {
-    return new Foo();
-  }
-};
-Foo.sDef = new Foo();
-__decorate([
-  x,
-  y
-], Foo.prototype, "mUndef", 2);
-__decorate([
-  x,
-  y
-], Foo.prototype, "mDef", 2);
-__decorate([
-  x,
-  y,
-  __param(0, x0),
-  __param(0, y0),
-  __param(1, x1),
-  __param(1, y1)
-], Foo.prototype, "method", 1);
-__decorate([
-  x,
-  y
-], Foo.prototype, "sUndef", 2);
-__decorate([
-  x,
-  y
-], Foo.prototype, "sDef", 2);
-__decorate([
-  x,
-  y,
-  __param(0, x0),
-  __param(0, y0),
-  __param(1, x1),
-  __param(1, y1)
-], Foo.prototype, "sMethod", 1);
-Foo = __decorate([
-  x.y(),
-  new y.x()
-], Foo);
-var all_default = Foo;
-
-// /all_computed.ts
-var _a, _b, _c, _d, _e, _f, _g, _h;
-let Foo2 = class {
-  constructor() {
-    this[_b] = 1;
-    this[_d] = 2;
-  }
-  [(_a = mUndef(), _b = mDef(), _c = method())](arg0, arg1) {
-    return new Foo2();
-  }
-  static [(xUndef(), _d = xDef(), yUndef(), _e = yDef(), _f = sUndef(), _g = sDef(), _h = sMethod())](arg0, arg1) {
-    return new Foo2();
-  }
-};
-Foo2[_e] = 3;
-Foo2[_g] = new Foo2();
-__decorate([
-  x,
-  y
-], Foo2.prototype, _a, 2);
-__decorate([
-  x,
-  y
-], Foo2.prototype, _b, 2);
-__decorate([
-  x,
-  y,
-  __param(0, x0),
-  __param(0, y0),
-  __param(1, x1),
-  __param(1, y1)
-], Foo2.prototype, _c, 1);
-__decorate([
-  x,
-  y
-], Foo2.prototype, _f, 2);
-__decorate([
-  x,
-  y
-], Foo2.prototype, _g, 2);
-__decorate([
-  x,
-  y,
-  __param(0, x0),
-  __param(0, y0),
-  __param(1, x1),
-  __param(1, y1)
-], Foo2.prototype, _h, 1);
-Foo2 = __decorate([
-  x?.[_ + "y"](),
-  new y?.[_ + "x"]()
-], Foo2);
-var all_computed_default = Foo2;
-
-// /a.ts
-let a_class = class {
-  fn() {
-    return new a_class();
-  }
-};
-a_class.z = new a_class();
-a_class = __decorate([
-  x(() => 0),
-  y(() => 1)
-], a_class);
-let a = a_class;
-
-// /b.ts
-let b_class = class {
-  fn() {
-    return new b_class();
-  }
-};
-b_class.z = new b_class();
-b_class = __decorate([
-  x(() => 0),
-  y(() => 1)
-], b_class);
-let b = b_class;
-
-// /c.ts
-let c = class {
-  fn() {
-    return new c();
-  }
-};
-c.z = new c();
-c = __decorate([
-  x(() => 0),
-  y(() => 1)
-], c);
-
-// /d.ts
-let d = class {
-  fn() {
-    return new d();
-  }
-};
-d.z = new d();
-d = __decorate([
-  x(() => 0),
-  y(() => 1)
-], d);
-
-// /e.ts
-let e_default = class {
-};
-e_default = __decorate([
-  x(() => 0),
-  y(() => 1)
-], e_default);
-var e_default2 = e_default;
-
-// /f.ts
-let f2 = class {
-  fn() {
-    return new f2();
-  }
-};
-f2.z = new f2();
-f2 = __decorate([
-  x(() => 0),
-  y(() => 1)
-], f2);
-var f_default = f2;
-
-// /g.ts
-let g_default2 = class {
-};
-g_default2 = __decorate([
-  x(() => 0),
-  y(() => 1)
-], g_default2);
-var g_default = g_default2;
-
-// /h.ts
-let h2 = class {
-  fn() {
-    return new h2();
-  }
-};
-h2.z = new h2();
-h2 = __decorate([
-  x(() => 0),
-  y(() => 1)
-], h2);
-var h_default = h2;
-
-// /i.ts
-class i_class {
+	})
 }
-__decorate([
-  x(() => 0),
-  y(() => 1)
-], i_class.prototype, "foo", 2);
-let i2 = i_class;
 
-// /j.ts
-class j2 {
-  foo() {
-  }
+func TestTSExportDefaultTypeIssue316(t *testing.T) {
+	ts_suite.expectBundled(t, bundled{
+		files: map[string]string{
+			"/entry.ts": `
+				import dc_def, { bar as dc } from './keep/declare-class'
+				import dl_def, { bar as dl } from './keep/declare-let'
+				import im_def, { bar as im } from './keep/interface-merged'
+				import in_def, { bar as _in } from './keep/interface-nested'
+				import tn_def, { bar as tn } from './keep/type-nested'
+				import vn_def, { bar as vn } from './keep/value-namespace'
+				import vnm_def, { bar as vnm } from './keep/value-namespace-merged'
+
+				import i_def, { bar as i } from './remove/interface'
+				import ie_def, { bar as ie } from './remove/interface-exported'
+				import t_def, { bar as t } from './remove/type'
+				import te_def, { bar as te } from './remove/type-exported'
+				import ton_def, { bar as ton } from './remove/type-only-namespace'
+				import tone_def, { bar as tone } from './remove/type-only-namespace-exported'
+
+				export default [
+					dc,
+					dl,
+					im,
+					_in,
+					tn,
+					vn,
+					vnm,
+
+					i,
+					ie,
+					t,
+					te,
+					ton,
+					tone,
+				]
+			`,
+			"/keep/declare-class.ts": `
+				declare class foo {}
+				export default foo
+				export let bar = 123
+			`,
+			"/keep/declare-let.ts": `
+				declare let foo: number
+				export default foo
+				export let bar = 123
+			`,
+			"/keep/interface-merged.ts": `
+				class foo {
+					static x = new foo
+				}
+				interface foo {}
+				export default foo
+				export let bar = 123
+			`,
+			"/keep/interface-nested.ts": `
+				if (true) {
+					interface foo {}
+				}
+				export default foo
+				export let bar = 123
+			`,
+			"/keep/type-nested.ts": `
+				if (true) {
+					type foo = number
+				}
+				export default foo
+				export let bar = 123
+			`,
+			"/keep/value-namespace.ts": `
+				namespace foo {
+					export let num = 0
+				}
+				export default foo
+				export let bar = 123
+			`,
+			"/keep/value-namespace-merged.ts": `
+				namespace foo {
+					export type num = number
+				}
+				namespace foo {
+					export let num = 0
+				}
+				export default foo
+				export let bar = 123
+			`,
+			"/remove/interface.ts": `
+				interface foo { }
+				export default foo
+				export let bar = 123
+			`,
+			"/remove/interface-exported.ts": `
+				export interface foo { }
+				export default foo
+				export let bar = 123
+			`,
+			"/remove/type.ts": `
+				type foo = number
+				export default foo
+				export let bar = 123
+			`,
+			"/remove/type-exported.ts": `
+				export type foo = number
+				export default foo
+				export let bar = 123
+			`,
+			"/remove/type-only-namespace.ts": `
+				namespace foo {
+					export type num = number
+				}
+				export default foo
+				export let bar = 123
+			`,
+			"/remove/type-only-namespace-exported.ts": `
+				export namespace foo {
+					export type num = number
+				}
+				export default foo
+				export let bar = 123
+			`,
+		},
+		entryPaths: []string{"/entry.ts"},
+		options: config.Options{
+			Mode:          config.ModeBundle,
+			AbsOutputFile: "/out.js",
+		},
+	})
 }
-__decorate([
-  x(() => 0),
-  y(() => 1)
-], j2.prototype, "foo", 1);
 
-// /k.ts
-class k_default {
-  foo(x2) {
-  }
+func TestTSImplicitExtensions(t *testing.T) {
+	ts_suite.expectBundled(t, bundled{
+		files: map[string]string{
+			"/entry.ts": `
+				import './pick-js.js'
+				import './pick-ts.js'
+				import './pick-jsx.jsx'
+				import './pick-tsx.jsx'
+				import './order-js.js'
+				import './order-jsx.jsx'
+			`,
+
+			"/pick-js.js": `console.log("correct")`,
+			"/pick-js.ts": `console.log("wrong")`,
+
+			"/pick-ts.jsx": `console.log("wrong")`,
+			"/pick-ts.ts":  `console.log("correct")`,
+
+			"/pick-jsx.jsx": `console.log("correct")`,
+			"/pick-jsx.tsx": `console.log("wrong")`,
+
+			"/pick-tsx.js":  `console.log("wrong")`,
+			"/pick-tsx.tsx": `console.log("correct")`,
+
+			"/order-js.ts":  `console.log("correct")`,
+			"/order-js.tsx": `console.log("wrong")`,
+
+			"/order-jsx.ts":  `console.log("correct")`,
+			"/order-jsx.tsx": `console.log("wrong")`,
+		},
+		entryPaths: []string{"/entry.ts"},
+		options: config.Options{
+			Mode:          config.ModeBundle,
+			AbsOutputFile: "/out.js",
+		},
+	})
 }
-__decorate([
-  __param(0, x2(() => 0)),
-  __param(0, y(() => 1))
-], k_default.prototype, "foo", 1);
 
-// /entry.js
-console.log(all_default, all_computed_default, a, b, c, d, e_default2, f_default, g_default, h_default, i2, j2, k_default);
+func TestTSImplicitExtensionsMissing(t *testing.T) {
+	ts_suite.expectBundled(t, bundled{
+		files: map[string]string{
+			"/entry.ts": `
+				import './mjs.mjs'
+				import './cjs.cjs'
+				import './js.js'
+				import './jsx.jsx'
+			`,
+			"/mjs.ts":      ``,
+			"/mjs.tsx":     ``,
+			"/cjs.ts":      ``,
+			"/cjs.tsx":     ``,
+			"/js.ts.js":    ``,
+			"/jsx.tsx.jsx": ``,
+		},
+		entryPaths: []string{"/entry.ts"},
+		options: config.Options{
+			Mode:          config.ModeBundle,
+			AbsOutputFile: "/out.js",
+		},
+		expectedScanLog: `entry.ts: error: Could not resolve "./mjs.mjs"
+entry.ts: error: Could not resolve "./cjs.cjs"
+entry.ts: error: Could not resolve "./js.js"
+entry.ts: error: Could not resolve "./jsx.jsx"
 `,
+	})
+}
+
+func TestExportTypeIssue379(t *testing.T) {
+	ts_suite.expectBundled(t, bundled{
+		files: map[string]string{
+			"/entry.ts": `
+				import * as A from './a'
+				import * as B from './b'
+				import * as C from './c'
+				import * as D from './d'
+				console.log(A, B, C, D)
+			`,
+			"/a.ts": `
+				type Test = Element
+				let foo = 123
+				export { Test, foo }
+			`,
+			"/b.ts": `
+				export type Test = Element
+				export let foo = 123
+			`,
+			"/c.ts": `
+				import { Test } from './test'
+				let foo = 123
+				export { Test }
+				export { foo }
+			`,
+			"/d.ts": `
+				export { Test }
+				export { foo }
+				import { Test } from './test'
+				let foo = 123
+			`,
+			"/test.ts": `
+				export type Test = Element
+			`,
+		},
+		entryPaths: []string{"/entry.ts"},
+		options: config.Options{
+			Mode:          config.ModeBundle,
+			AbsOutputFile: "/out.js",
 		},
 	})
 }

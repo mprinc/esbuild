@@ -7,19 +7,75 @@
 import * as types from "./types";
 
 export interface BuildRequest {
+  command: 'build';
+  key: number;
   flags: string[];
   write: boolean;
   stdin: string | null;
   resolveDir: string | null;
+  incremental: boolean;
+  plugins?: BuildPlugin[];
+  serve?: ServeRequest;
+}
+
+export interface ServeRequest {
+  serveID: number;
+  port?: number;
+  host?: string;
+}
+
+export interface ServeResponse {
+  port: number;
+  host: string;
+}
+
+export interface ServeStopRequest {
+  command: 'serve-stop';
+  serveID: number;
+}
+
+export interface BuildPlugin {
+  name: string;
+  onResolve: { id: number, filter: string, namespace: string }[];
+  onLoad: { id: number, filter: string, namespace: string }[];
 }
 
 export interface BuildResponse {
   errors: types.Message[];
   warnings: types.Message[];
-  outputFiles: types.OutputFile[];
+  outputFiles: BuildOutputFile[];
+  rebuildID?: number;
+}
+
+export interface BuildOutputFile {
+  path: string;
+  contents: Uint8Array;
+}
+
+export interface RebuildRequest {
+  command: 'rebuild';
+  rebuildID: number;
+}
+
+export interface RebuildDisposeRequest {
+  command: 'rebuild-dispose';
+  rebuildID: number;
+}
+
+export interface OnRequestRequest {
+  command: 'serve-request';
+  serveID: number;
+  args: types.ServeOnRequestArgs;
+}
+
+export interface OnWaitRequest {
+  command: 'serve-wait';
+  serveID: number;
+  error: string | null;
 }
 
 export interface TransformRequest {
+  command: 'transform';
   flags: string[];
   input: string;
   inputFS: boolean;
@@ -29,11 +85,53 @@ export interface TransformResponse {
   errors: types.Message[];
   warnings: types.Message[];
 
-  js: string;
-  jsFS: boolean;
+  code: string;
+  codeFS: boolean;
 
-  jsSourceMap: string;
-  jsSourceMapFS: boolean;
+  map: string;
+  mapFS: boolean;
+}
+
+export interface OnResolveRequest {
+  command: 'resolve';
+  key: number;
+  ids: number[];
+  path: string;
+  importer: string;
+  namespace: string;
+  resolveDir: string;
+}
+
+export interface OnResolveResponse {
+  id?: number;
+  pluginName?: string;
+
+  errors?: types.PartialMessage[];
+  warnings?: types.PartialMessage[];
+
+  path?: string;
+  external?: boolean;
+  namespace?: string;
+}
+
+export interface OnLoadRequest {
+  command: 'load';
+  key: number;
+  ids: number[];
+  path: string;
+  namespace: string;
+}
+
+export interface OnLoadResponse {
+  id?: number;
+  pluginName?: string;
+
+  errors?: types.PartialMessage[];
+  warnings?: types.PartialMessage[];
+
+  contents?: Uint8Array;
+  resolveDir?: string;
+  loader?: string;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -62,7 +160,7 @@ export function encodePacket(packet: Packet): Uint8Array {
       bb.write8(+value);
     } else if (typeof value === 'number') {
       bb.write8(2);
-      bb.write32(value);
+      bb.write32(value | 0);
     } else if (typeof value === 'string') {
       bb.write8(3);
       bb.write(encodeUTF8(value));
