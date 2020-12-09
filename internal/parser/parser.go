@@ -3933,7 +3933,7 @@ func (p *parser) parseStmt(opts parseStmtOpts) ast.Stmt {
 
 		case lexer.TInterface:
 			if p.TS.Parse {
-				opts.isExport = true
+				// opts.isExport = true
 				return p.parseStmt(opts)
 			}
 			p.lexer.Unexpected()
